@@ -4,6 +4,7 @@ const app = express();
 const PORT = process.env.PORT || 3000;
 
 app.disable('x-powered-by');
+app.use(express.json({limit:'2mb'}));
 app.use(express.static(__dirname, { extensions: ['html'] }));
 
 const cache = new Map();
@@ -89,6 +90,86 @@ async function randomFromOpenSky(country,type){
   }
   throw new Error(`OpenSky found aircraft for ${country}, but none resolved${type?' as '+type:''}.`);
 }
+
+
+function parseFlight(x={}){
+  return {
+    id:`srv-${Date.now().toString(36)}-${Math.random().toString(36).slice(2,9)}`,
+    flight:x.flight||'', date:x.date||'',
+    origin:String(x.origin||'').toUpperCase(), dest:String(x.dest||'').toUpperCase(),
+    originName:x.originName||'', destName:x.destName||'',
+    aircraft:String(x.aircraft||'').toUpperCase(), reg:String(x.reg||'').toUpperCase(),
+    std:x.std||'', sta:x.sta||'', atd:x.atd||'', status:x.status||'',
+    airline:x.airline||'', operatorCode:String(x.operatorCode||'').toUpperCase(), flightTime:x.flightTime||''
+  };
+}
+function dedupeParsed(arr){
+  const seen=new Set();
+  return arr.filter(f=>{const k=[f.flight,f.origin,f.dest,f.std,f.reg].join('|');if(seen.has(k))return false;seen.add(k);return true;});
+}
+
+function parseMobileAircraftLine(line=''){
+  const compact=String(line).trim();
+  const tm=compact.match(/^([A-Z0-9]{3,4})(.*)$/); if(!tm) return {aircraft:'',reg:'',airline:''};
+  const aircraft=tm[1],rest=tm[2]||'';
+  // Common registration formats seen in FR24's compact mobile copy output.
+  const patterns=[/^(N[0-9]{1,5}[A-Z]{0,2})(.*)$/i,/^([0-9][A-Z]-[A-Z0-9]{3,5})(.*)$/i,/^([A-Z]{1,2}-[A-Z0-9]{3,6})(.*)$/i,/^([A-Z]{2}[0-9]{2,5})(.*)$/i];
+  for(const rx of patterns){const m=rest.match(rx);if(m)return {aircraft,reg:m[1].toUpperCase(),airline:(m[2]||'').replace(/^-$/,'').trim()};}
+  return {aircraft,reg:'',airline:rest.replace(/^-$/,'').trim()};
+}
+
+function parseAirportText(text){
+  const lines=String(text||'').split(/\r?\n/).map(s=>s.trim()).filter(Boolean);
+  let airportCode='';
+  for(const line of lines){const m=line.match(/^([A-Z0-9]{3})\/([A-Z0-9]{4})$/);if(m){airportCode=m[1];break;}}
+  const section=/TIME\s+FLIGHT\s+FROM/i.test(text)?'arrivals':/TIME\s+FLIGHT\s+TO/i.test(text)?'departures':(()=>{const a=text.toLowerCase().lastIndexOf('arrivals'),d=text.toLowerCase().lastIndexOf('departures');return d>a?'departures':a>d?'arrivals':'airport schedule';})();
+  const flights=[];
+  for(let i=0;i<lines.length;i++){
+    const line=lines[i].replace(/\s+/g,' '), tm=line.match(/^(\d{2}:\d{2})\s+/); if(!tm||/^\d{2}:\d{2}\s*$/.test(line))continue;
+    const routeM=line.match(/\b([A-Za-z .'-]+)\s*\(([A-Z0-9]{3})\)/); if(!routeM)continue;
+    const before=line.slice(tm[0].length,routeM.index).trim(), after=line.slice(routeM.index+routeM[0].length).trim();
+    const flight=(before.match(/([A-Z0-9]{2,8})$/)||[])[1]||'';
+    const airM=after.match(/\b([A-Z0-9]{3,4})\s*(?:\(([A-Z0-9-]{3,10})\))?/);
+    const statusM=line.match(/(Scheduled|Estimated\s+\d{2}:\d{2}|Landed\s+\d{2}:\d{2}|Delayed(?:\s+\d{2}:\d{2})?|Canceled|Diverted).*$/i);
+    if(flight||airM){const other=routeM[2],origin=section==='arrivals'?other:airportCode,dest=section==='arrivals'?airportCode:other;flights.push(parseFlight({flight,origin,dest,aircraft:airM?.[1]||'',reg:airM?.[2]||'',std:section==='departures'?tm[1]:'',sta:section==='arrivals'?tm[1]:'',status:statusM?.[1]||''}));}
+  }
+  if(!flights.length){
+    for(let i=0;i<lines.length;i++){
+      const m=lines[i].match(/^(\d{2}:\d{2})\s+([A-Z0-9]{2,8})?\s*(.+?)\s*\(([A-Z0-9]{3})\)$/); if(!m)continue;
+      const next=(lines[i+1]||'').replace(/\s+/g,' '), a=parseMobileAircraftLine(next), prev=lines[i-1]||'';
+      const status=/^(Estimated|Scheduled|Landed|Delayed|Canceled)/i.test(prev)?prev:'', other=m[4],origin=section==='arrivals'?other:airportCode,dest=section==='arrivals'?airportCode:other;
+      flights.push(parseFlight({flight:m[2]||'',origin,dest,aircraft:a.aircraft,reg:a.reg,std:section==='departures'?m[1]:'',sta:section==='arrivals'?m[1]:'',status,airline:a.airline}));
+    }
+  }
+  return {type:'airport',meta:{airportCode,section},flights:dedupeParsed(flights)};
+}
+function parseTailText(text){
+  const one=String(text||'').replace(/\s+/g,' ').trim();
+  const meta={
+    registration:(one.match(/Flight history for aircraft\s*-\s*([A-Z0-9-]+)/i)||[])[1]||'',
+    aircraft:(one.match(/AIRCRAFT\s+(.+?)\s+AIRLINE/i)||[])[1]||'',
+    airline:(one.match(/AIRLINE\s+(.+?)\s+OPERATOR/i)||[])[1]||'',
+    operator:(one.match(/OPERATOR\s+(.+?)\s+TYPE CODE/i)||[])[1]||'',
+    typeCode:(one.match(/TYPE CODE\s+([A-Z0-9]+)/i)||[])[1]||'', operatorCode:''
+  };
+  const afterType=one.split(/TYPE CODE\s+[A-Z0-9]+/i)[1]||''; meta.operatorCode=(afterType.match(/\bCode\s+([A-Z0-9]{3})\b/i)||[])[1]||'';
+  const flights=[];
+  const rx=/\b([A-Z0-9]{2,8})\s+(\d{2}\s+[A-Z][a-z]{2}\s+\d{4})\s+(\d{1,2}:\d{2})\s+Landed\s+(\d{2}:\d{2})\s+STD\s+(\d{2}:\d{2})\s+ATD\s+(\d{2}:\d{2})\s+STA\s+(\d{2}:\d{2})\s+FROM\s+(.+?)\s+\(([A-Z0-9]{3})\)\s+TO\s+(.+?)\s+\(([A-Z0-9]{3})\)(?=\s+[A-Z0-9]{2,8}\s+\d{2}\s+[A-Z][a-z]{2}\s+\d{4}|\s+More than|$)/g;
+  let m; while((m=rx.exec(one))) flights.push(parseFlight({flight:m[1],date:m[2],flightTime:m[3],status:'Landed '+m[4],std:m[5],atd:m[6],sta:m[7],origin:m[9],originName:m[8],dest:m[11],destName:m[10],aircraft:meta.typeCode,reg:meta.registration,airline:meta.operator,operatorCode:meta.operatorCode}));
+  return {type:'tail',meta,flights};
+}
+function parseFr24(text){
+  const t=String(text||'').trim(); if(!t) throw new Error('No FR24 text was supplied.');
+  return /Flight history for aircraft|FLIGHTS HISTORY|TYPE CODE/i.test(t)?parseTailText(t):parseAirportText(t);
+}
+
+app.post('/api/parse-fr24',(req,res)=>{
+  try{
+    const out=parseFr24(req.body?.text);
+    if(!out.flights.length) return res.status(422).json({error:'No flights were recognized in the copied FR24 text.'});
+    res.json(out);
+  }catch(e){res.status(400).json({error:e.message||'Unable to parse FR24 text.'});}
+});
 
 app.get('/api/random-tail', async (req,res)=>{
   const country=String(req.query.country||'US').toUpperCase();

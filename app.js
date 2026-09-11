@@ -122,8 +122,8 @@ function chooseAirport(a){
   if(!a)return; currentAirport=a;
   state.recentAirports=[a.iata||a.icao,...state.recentAirports.filter(x=>x!==(a.iata||a.icao))].slice(0,10);saveState();renderRecent();
   $('airportCard').classList.remove('empty');
-  $('airportCard').innerHTML=`<h3>${esc(a.name)}</h3><div class="airport-codes">${esc(a.iata||'—')} / ${esc(a.icao||'—')}</div><div class="airport-meta">${esc(a.city)}, ${esc(a.country)} · ${esc((a.size||'unknown').toUpperCase())} · ${a.lat.toFixed(3)}, ${a.lon.toFixed(3)} · ${esc(a.tz)}</div><div class="button-row"><button class="btn primary" id="openDep">Open FR24 departures</button><button class="btn primary" id="openArr">Open FR24 arrivals</button><button class="btn secondary" id="goPaste">Paste & Parse</button></div>`;
-  $('openDep').onclick=()=>openFR24Airport(a,'departures'); $('openArr').onclick=()=>openFR24Airport(a,'arrivals'); $('goPaste').onclick=()=>switchPage('paste');
+  $('airportCard').innerHTML=`<h3>${esc(a.name)}</h3><div class="airport-codes">${esc(a.iata||'—')} / ${esc(a.icao||'—')}</div><div class="airport-meta">${esc(a.city)}, ${esc(a.country)} · ${esc((a.size||'unknown').toUpperCase())} · ${a.lat.toFixed(3)}, ${a.lon.toFixed(3)} · ${esc(a.tz)}</div><div class="button-row"><button class="btn primary" id="openDep">Open FR24 departures</button><button class="btn primary" id="openArr">Open FR24 arrivals</button><button class="btn secondary" id="goPaste">Import copied FR24 page</button></div>`;
+  $('openDep').onclick=()=>openFR24Airport(a,'departures'); $('openArr').onclick=()=>openFR24Airport(a,'arrivals'); $('goPaste').onclick=importClipboardBackend;
 }
 function openFR24Path(path){
   // Use FR24's browser-oriented free.flightradar24.com hostname rather than the
@@ -142,83 +142,12 @@ function renderRecent(){ const box=$('recentAirports'); box.innerHTML=''; state.
 function switchPage(page){ qsa('.tab').forEach(b=>b.classList.toggle('active',b.dataset.page===page)); qsa('.page').forEach(p=>p.classList.remove('active')); $('page-'+page).classList.add('active'); if(page==='holding')renderHolding(); if(page==='calendar')renderCalendar(); if(page==='settings')renderSettings(); }
 qsa('.tab').forEach(b=>b.onclick=()=>switchPage(b.dataset.page));
 
-function detectAndParse(text){
-  if(/Flight history for aircraft|FLIGHTS HISTORY|TYPE CODE/i.test(text)) return parseTailPage(text);
-  return parseAirportPage(text);
-}
-function parseAirportPage(text){
-  const lines=text.split(/\r?\n/).map(s=>s.trim()).filter(Boolean);
-  let airportCode='';
-  for(const line of lines){ const m=line.match(/^([A-Z0-9]{3})\/([A-Z0-9]{4})$/); if(m){airportCode=m[1];break;} }
-  const section = /TIME\s+FLIGHT\s+FROM/i.test(text) ? 'arrivals' : /TIME\s+FLIGHT\s+TO/i.test(text) ? 'departures' : (()=>{ const a=text.toLowerCase().lastIndexOf('arrivals'), d=text.toLowerCase().lastIndexOf('departures'); return d>a?'departures':a>d?'arrivals':'airport schedule'; })();
-  const flights=[];
-
-  // Desktop/tabular rows, usually one complete flight per line after copy.
-  for(let i=0;i<lines.length;i++){
-    const line=lines[i].replace(/\s+/g,' ');
-    const tm=line.match(/^(\d{2}:\d{2})\s+/); if(!tm) continue;
-    if(/^\d{2}:\d{2}\s*$/.test(line)) continue;
-    const routeM=line.match(/\b([A-Za-z .'-]+)\s*\(([A-Z0-9]{3})\)/);
-    if(!routeM) continue;
-    const before=line.slice(tm[0].length, routeM.index).trim();
-    const after=line.slice(routeM.index+routeM[0].length).trim();
-    const flightM=before.match(/([A-Z0-9]{2,8})$/);
-    const flight=flightM?flightM[1]:'';
-    const airM=after.match(/\b([A-Z0-9]{3,4})\s*(?:\(([A-Z0-9-]{3,10})\))?/);
-    const statusM=line.match(/(Scheduled|Estimated\s+\d{2}:\d{2}|Landed\s+\d{2}:\d{2}|Delayed(?:\s+\d{2}:\d{2})?|Canceled|Diverted).*$/i);
-    if(flight || airM){
-      const other=routeM[2]; const origin=section==='arrivals'?other:airportCode; const dest=section==='arrivals'?airportCode:other;
-      flights.push(makeFlight({flight,date:'',origin,dest,aircraft:airM?.[1]||'',reg:airM?.[2]||'',std:section==='departures'?tm[1]:'',sta:section==='arrivals'?tm[1]:'',status:statusM?.[1]||'',airline:''}));
-    }
-  }
-
-  // Mobile copy: scheduled/estimated marker then a line like "03:28 LXJ660 Teterboro(TEB)" and next aircraft line.
-  if(!flights.length){
-    for(let i=0;i<lines.length;i++){
-      const m=lines[i].match(/^(\d{2}:\d{2})\s+([A-Z0-9]{2,8})?\s*(.+?)\s*\(([A-Z0-9]{3})\)$/);
-      if(!m) continue;
-      const next=(lines[i+1]||'').replace(/\s+/g,' ');
-      const a=next.match(/^([A-Z0-9]{3,4})(?:\s*\(?([A-Z0-9-]{3,10})\)?)?(.*)$/);
-      const prev=lines[i-1]||'';
-      const status=/^(Estimated|Scheduled|Landed|Delayed|Canceled)/i.test(prev)?prev:'';
-      const other=m[4], origin=section==='arrivals'?other:airportCode, dest=section==='arrivals'?airportCode:other;
-      flights.push(makeFlight({flight:m[2]||'',date:'',origin,dest,aircraft:a?.[1]||'',reg:a?.[2]||'',std:section==='departures'?m[1]:'',sta:section==='arrivals'?m[1]:'',status,airline:a?.[3]||''}));
-    }
-  }
-
-  // Broader scan for multi-column copied data where status is on following line.
-  const uniq=dedupeFlights(flights);
-  return {type:'airport',meta:{airportCode,section},flights:uniq};
-}
-function parseTailPage(text){
-  const one=text.replace(/\s+/g,' ').trim();
-  const meta={
-    registration:(one.match(/Flight history for aircraft\s*-\s*([A-Z0-9-]+)/i)||[])[1]||'',
-    aircraft:(one.match(/AIRCRAFT\s+(.+?)\s+AIRLINE/i)||[])[1]||'',
-    airline:(one.match(/AIRLINE\s+(.+?)\s+OPERATOR/i)||[])[1]||'',
-    operator:(one.match(/OPERATOR\s+(.+?)\s+TYPE CODE/i)||[])[1]||'',
-    typeCode:(one.match(/TYPE CODE\s+([A-Z0-9]+)/i)||[])[1]||'',
-    operatorCode:''
-  };
-  const afterType = one.split(/TYPE CODE\s+[A-Z0-9]+/i)[1]||'';
-  meta.operatorCode=(afterType.match(/\bCode\s+([A-Z0-9]{3})\b/i)||[])[1]||'';
-  const flights=[];
-  const rx=/\b([A-Z0-9]{2,8})\s+(\d{2}\s+[A-Z][a-z]{2}\s+\d{4})\s+(\d{1,2}:\d{2})\s+Landed\s+(\d{2}:\d{2})\s+STD\s+(\d{2}:\d{2})\s+ATD\s+(\d{2}:\d{2})\s+STA\s+(\d{2}:\d{2})\s+FROM\s+(.+?)\s+\(([A-Z0-9]{3})\)\s+TO\s+(.+?)\s+\(([A-Z0-9]{3})\)(?=\s+[A-Z0-9]{2,8}\s+\d{2}\s+[A-Z][a-z]{2}\s+\d{4}|\s+More than|$)/g;
-  let m; while((m=rx.exec(one))){
-    flights.push(makeFlight({flight:m[1],date:m[2],flightTime:m[3],status:'Landed '+m[4],std:m[5],atd:m[6],sta:m[7],origin:m[9],originName:m[8],dest:m[11],destName:m[10],aircraft:meta.typeCode,reg:meta.registration,airline:meta.operator,operatorCode:meta.operatorCode}));
-  }
-  return {type:'tail',meta,flights};
-}
-function makeFlight(x){ const f={id:uid(),flight:x.flight||'',date:x.date||'',origin:(x.origin||'').toUpperCase(),dest:(x.dest||'').toUpperCase(),originName:x.originName||'',destName:x.destName||'',aircraft:(x.aircraft||'').toUpperCase(),reg:(x.reg||'').toUpperCase(),std:x.std||'',sta:x.sta||'',atd:x.atd||'',status:x.status||'',airline:x.airline||'',operatorCode:(x.operatorCode||'').toUpperCase(),flightTime:x.flightTime||''}; f.airlineCode=deriveAirlineCode(f); return f; }
 function deriveAirlineCode(f){ if(f.operatorCode) return f.operatorCode; const v=String(f.flight||'').toUpperCase(); let m=v.match(/^([A-Z]{3})(?=\d)/); if(m)return m[1]; m=v.match(/^([A-Z0-9]{2})(?=\d)/); if(!m)return ''; const p=m[1]; return airlines.get(p)||p; }
 function dedupeFlights(arr){ const seen=new Set(); return arr.filter(f=>{const k=[f.flight,f.origin,f.dest,f.std,f.reg].join('|'); if(seen.has(k))return false;seen.add(k);return true;}); }
 
 function renderParsed(result){
   parsedFlights=result.flights.map(f=>({...f,airlineCode:f.airlineCode||deriveAirlineCode(f)})); parsedMeta=result.meta;
   $('resultsTitle').textContent=result.type==='tail'?'Tail flight history':'Airport schedule';
-  $('sourceSummary').innerHTML=result.type==='tail'
-    ? `<strong>Aircraft tail page</strong><br>Registration: ${esc(result.meta.registration||'—')}<br>Operator: ${esc(result.meta.operator||'—')}<br>ICAO type: ${esc(result.meta.typeCode||'—')}<br>Operator code: ${esc(result.meta.operatorCode||'—')}`
-    : `<strong>Airport ${esc(result.meta.section||'schedule')}</strong><br>Airport: ${esc(result.meta.airportCode||'Not detected')}<br>Times: kept as pasted (Zulu expected)`;
   populateResultFilters(); renderFilteredFlights();
 }
 function populateResultFilters(){
@@ -441,23 +370,57 @@ async function directOpenSkyTail(country,type){
   throw new Error('OpenSky did not yield a live aircraft matching that registration country/type.');
 }
 async function rollRandomTail(){
-  const country=$('tailCountry').value||'US',source=$('tailSource').value||'auto'; let aircraft=$('tailAircraft').value||''; if(aircraft==='CUSTOM') aircraft=$('tailCustomAircraft').value.trim().toUpperCase(); state.tailCountry=country;state.tailSource=source;state.tailAircraft=$('tailAircraft').value||'';saveState();
+  const country=$('tailCountry').value||'US',source=$('tailSource').value||'auto';
+  let aircraft=$('tailAircraft').value||'';
+  if(aircraft==='CUSTOM') aircraft=$('tailCustomAircraft').value.trim().toUpperCase();
+  state.tailCountry=country;state.tailSource=source;state.tailAircraft=$('tailAircraft').value||'';saveState();
   $('tailStatus').textContent='Searching live aircraft…'; $('tailStatus').className='status-pill'; $('randomTailBtn').disabled=true;
   try{
-    let j;
-    if(source==='adsblol') j=await directAdsbTail(country,aircraft);
-    else if(source==='opensky') j=await directOpenSkyTail(country,aircraft);
-    else { try{j=await directAdsbTail(country,aircraft);}catch(first){try{j=await directOpenSkyTail(country,aircraft);}catch(second){throw new Error(`${first.message} OpenSky fallback: ${second.message}`);}} }
+    const qs=new URLSearchParams({country,source}); if(aircraft)qs.set('type',aircraft);
+    const r=await fetch(`/api/random-tail?${qs.toString()}`); const j=await r.json().catch(()=>({}));
+    if(!r.ok) throw new Error(j.error||`Lookup failed (${r.status})`);
     $('tailStatus').textContent=j.source||'Found'; $('tailStatus').className='status-pill good';
-    const hasReg=!!j.registration, rc=REGISTRATION_COUNTRIES.find(x=>x[0]===country);
-    $('tailCard').classList.remove('empty'); $('tailCard').innerHTML=`<h3>${esc(j.registration||'Registration unavailable')}</h3><div class="airport-codes">${esc(j.aircraft||'TYPE —')} · ${esc(j.callsign||'NO CALLSIGN')}</div><div class="airport-meta">${esc(rc?`${rc[1]} registration (${rc[2]})`:country)} · HEX ${esc(String(j.hex||'').toUpperCase())} · ${esc(j.operator||'Operator unavailable')} · ${esc(j.source||'')}</div><div class="button-row"><button id="openRandomTail" class="btn primary" ${hasReg?'':'disabled'}>Open FR24 tail history</button><button id="tailToPaste" class="btn secondary">Paste & Parse</button></div>`;
-    if(hasReg)$('openRandomTail').onclick=()=>openFR24Path(`/data/aircraft/${encodeURIComponent(j.registration.toLowerCase())}`); $('tailToPaste').onclick=()=>switchPage('paste');
-  }catch(e){ $('tailStatus').textContent='Lookup failed'; $('tailStatus').className='status-pill bad'; $('tailCard').classList.remove('empty'); $('tailCard').innerHTML=`<div class="notice warning">${esc(e.message)}<br><br>Try again, select another aircraft type, or switch provider.</div>`; }
-  finally{$('randomTailBtn').disabled=false;}
+    const hasReg=!!j.registration,rc=REGISTRATION_COUNTRIES.find(x=>x[0]===country);
+    $('tailCard').classList.remove('empty');
+    $('tailCard').innerHTML=`<h3>${esc(j.registration||'Registration unavailable')}</h3><div class="airport-codes">${esc(j.aircraft||'TYPE —')} · ${esc(j.callsign||'NO CALLSIGN')}</div><div class="airport-meta">${esc(rc?`${rc[1]} registration (${rc[2]})`:country)} · HEX ${esc(String(j.hex||'').toUpperCase())} · ${esc(j.operator||'Operator unavailable')} · ${esc(j.source||'')}</div><div class="button-row"><button id="openRandomTail" class="btn primary" ${hasReg?'':'disabled'}>Open FR24 tail history</button><button id="tailToPaste" class="btn secondary">Import copied FR24 page</button></div>`;
+    if(hasReg)$('openRandomTail').onclick=()=>openFR24Path(`/data/aircraft/${encodeURIComponent(j.registration.toLowerCase())}`);
+    $('tailToPaste').onclick=importClipboardBackend;
+  }catch(e){
+    $('tailStatus').textContent='Lookup failed'; $('tailStatus').className='status-pill bad';
+    $('tailCard').classList.remove('empty'); $('tailCard').innerHTML=`<div class="notice warning">${esc(e.message)}<br><br>Try again, select another aircraft type, or switch provider.</div>`;
+  }finally{$('randomTailBtn').disabled=false;}
+}
+
+async function importClipboardBackend(){
+  let text='';
+  try{
+    text=await navigator.clipboard.readText();
+  }catch(e){
+    alert('Safari did not allow clipboard access. Copy the FR24 page again, return to LineForge, and tap Import copied FR24 page.');
+    return;
+  }
+  if(!String(text||'').trim()){
+    alert('Your clipboard is empty. Copy the FR24 page text first.');
+    return;
+  }
+  switchPage('results');
+  try{
+    const r=await fetch('/api/parse-fr24',{
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({text})
+    });
+    const j=await r.json().catch(()=>({}));
+    if(!r.ok) throw new Error(j.error||`Parse failed (${r.status})`);
+    renderParsed(j);
+  }catch(e){
+    alert(`Could not parse the copied FR24 page: ${e.message}`);
+  }
 }
 
 // Wire UI
 $('themeBtn').onclick=()=>{state.theme=state.theme==='dark'?'light':'dark';saveState();applyTheme();};
+qsa('.import-clipboard-btn').forEach(b=>b.onclick=importClipboardBackend);
 populateTailCountries(); $('tailSource').value=state.tailSource||'auto'; $('tailAircraft').value=state.tailAircraft||''; $('tailCustomWrap').classList.toggle('hidden',$('tailAircraft').value!=='CUSTOM');
 $('randomTailBtn').onclick=rollRandomTail; $('tailCountry').onchange=()=>{state.tailCountry=$('tailCountry').value;saveState();}; $('tailSource').onchange=()=>{state.tailSource=$('tailSource').value;saveState();}; $('tailAircraft').onchange=()=>{state.tailAircraft=$('tailAircraft').value; $('tailCustomWrap').classList.toggle('hidden',$('tailAircraft').value!=='CUSTOM'); saveState();};
 $('randomAirportBtn').onclick=()=>{const x=eligibleAirports();if(!x.length)return alert('No airports match those filters.');chooseAirport(x[Math.floor(Math.random()*x.length)]);};
@@ -465,10 +428,6 @@ $('searchAirportBtn').onclick=()=>{const q=$('airportSearch').value.trim().toLow
 $('airportSearch').addEventListener('keydown',e=>{if(e.key==='Enter')$('searchAirportBtn').click();});
 $('countryFilter').onchange=()=>{state.airportCountry=$('countryFilter').value;saveState();};
 $('clearRecentBtn').onclick=()=>{state.recentAirports=[];saveState();renderRecent();};
-$('parseBtn').onclick=()=>{const text=$('pasteBox').value.trim();if(!text)return alert('Paste FR24 page text first.');renderParsed(detectAndParse(text));};
-$('clearPasteBtn').onclick=()=>{$('pasteBox').value='';parsedFlights=[];renderParsed({type:'airport',meta:{},flights:[]});$('sourceSummary').textContent='Nothing parsed yet.';};
-$('sampleAirportBtn').onclick=()=>{$('pasteBox').value=AIRPORT_SAMPLE;renderParsed(detectAndParse(AIRPORT_SAMPLE));};
-$('sampleTailBtn').onclick=()=>{$('pasteBox').value=TAIL_SAMPLE;renderParsed(detectAndParse(TAIL_SAMPLE));};
 ['filterAirline','filterAircraft','filterDeparture','filterDestination'].forEach(id=>$(id).onchange=renderFilteredFlights);
 $('freightToggle').onchange=()=>{updateCargo();}; $('buildPax').onchange=()=>{if($('freightToggle').checked)updateCargo();};
 $('hazmatToggle').onchange=()=>{$('hazmatFields').classList.toggle('hidden',!$('hazmatToggle').checked);};
