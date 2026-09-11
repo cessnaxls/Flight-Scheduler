@@ -9,7 +9,7 @@ LineForge is a FLICA-style flight-simulation dispatch, pairing, and trip-buildin
 - FR24 airport and aircraft-history pages open through LineForge's same-origin `/fr24` handoff page. The handoff opens a Safari tab first, then navigates to FR24, avoiding a direct iOS universal-link tap that commonly launches the native FR24 app. iOS can still override browser behavior based on system/user association settings.
 - New **Tail Finder** rolls live registrations by ISO country code (default **US**) using OpenSky state vectors and ADSB.lol enrichment. You can choose Auto, OpenSky, or ADSB.lol.
 - Parsed flight tables can be filtered by **3-letter airline ICAO**, **aircraft type**, **departure**, and **destination**.
-- The project is now a tiny Node/Express Render web service instead of a static site because live surveillance lookup and the Safari-safe FR24 handoff need server routes.
+- The project is now a tiny browser-only static Render web service instead of a static site because live surveillance lookup and the Safari-safe FR24 handoff need server routes.
 
 ## Deploy on Render
 
@@ -53,3 +53,7 @@ LineForge automatically uses OAuth client credentials when both are present.
 - FR24 times are stored exactly as pasted; set FR24 to UTC/Zulu.
 - Duty/FDP bars are simulation planning aids, not regulatory legality determinations.
 - HAZMAT/DG remarks are simulation-only formatting aids.
+
+
+## iPad / FR24
+FR24 links use `https://free.flightradar24.com/...`, which is FR24's browser-facing hostname and avoids LineForge helper routes. Tail lookup is browser-side, so it works on a Render Static Site without `/api` routes. Registration-country filtering is by national registration prefix (N, G-, C-F/C-G, etc.), not ISO two-letter country codes.

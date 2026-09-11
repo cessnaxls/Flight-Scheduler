@@ -125,15 +125,16 @@ function chooseAirport(a){
   $('airportCard').innerHTML=`<h3>${esc(a.name)}</h3><div class="airport-codes">${esc(a.iata||'—')} / ${esc(a.icao||'—')}</div><div class="airport-meta">${esc(a.city)}, ${esc(a.country)} · ${esc((a.size||'unknown').toUpperCase())} · ${a.lat.toFixed(3)}, ${a.lon.toFixed(3)} · ${esc(a.tz)}</div><div class="button-row"><button class="btn primary" id="openDep">Open FR24 departures</button><button class="btn primary" id="openArr">Open FR24 arrivals</button><button class="btn secondary" id="goPaste">Paste & Parse</button></div>`;
   $('openDep').onclick=()=>openFR24Airport(a,'departures'); $('openArr').onclick=()=>openFR24Airport(a,'arrivals'); $('goPaste').onclick=()=>switchPage('paste');
 }
-async function openFR24Path(path){
-  const url='https://www.flightradar24.com'+path;
-  // iPadOS can hand ordinary FR24 links to the installed FR24 app via Universal Links.
-  // A web page cannot disable that association. The reliable browser-only workflow is
-  // to copy the URL and open a same-origin Safari helper tab, where the user pastes it
-  // into Safari's address bar. This app never directly navigates to the Universal Link.
-  try{ await navigator.clipboard.writeText(url); }catch(e){ localStorage.setItem('lineforge-fr24-url',url); }
-  const w=window.open('/fr24?path='+encodeURIComponent(path),'fr24Safari');
-  if(!w) alert('Safari blocked the helper tab. FR24 URL copied: '+url);
+function openFR24Path(path){
+  // Use FR24's browser-oriented free.flightradar24.com hostname rather than the
+  // www hostname that iPadOS commonly hands to the installed FR24 app as a Universal Link.
+  // Open it directly in a Safari tab; do not bounce through a LineForge helper route.
+  const url='https://free.flightradar24.com'+path;
+  const w=window.open(url,'_blank','noopener,noreferrer');
+  if(!w){
+    try{ navigator.clipboard.writeText(url); }catch(e){}
+    alert('Safari blocked the FR24 tab. The web URL was copied to your clipboard.');
+  }
 }
 function openFR24Airport(a,kind){ const code=(a.iata||a.icao).toLowerCase(); openFR24Path(`/data/airports/${encodeURIComponent(code)}/${kind}`); }
 function renderRecent(){ const box=$('recentAirports'); box.innerHTML=''; state.recentAirports.forEach(code=>{const a=airportByCode(code); if(!a)return; const b=document.createElement('button');b.className='chip';b.textContent=`${a.iata||a.icao} · ${a.city}`;b.onclick=()=>chooseAirport(a);box.appendChild(b);}); if(!box.children.length)box.innerHTML='<span class="muted">No recent airports.</span>'; }
@@ -343,18 +344,115 @@ function exportJson(){ const blob=new Blob([JSON.stringify(state,null,2)],{type:
 const AIRPORT_SAMPLE=`OPF/KOPF\nMiami Opa Locka Executive Airport\nUnited States\nArrivals\nTIME FLIGHT FROM AIRLINE AIRCRAFT STATUS\nFriday, Sep 11\n03:28 LXJ660 Teterboro (TEB) Flexjet GLF6 (N660FX) Estimated 03:24\n07:12 VJT768 Los Angeles (LAX) VistaJet GL7T (9H-VIT) Estimated 06:31\n14:07  Stuart (SUA) - PA31 (N56MH) Scheduled\n16:03 LXJ449 Teterboro (TEB) Flexjet E545 Scheduled\n17:40 XE1100 Teterboro (TEB) JSX ER4 Scheduled`;
 const TAIL_SAMPLE=`Flight history for aircraft - N989CL\nAIRCRAFT Hawker 800XP\nAIRLINE Fly Alliance\nOPERATOR Fly Alliance\nTYPE CODE H25B\nCode KPO\nCode KPO\nMODE S ADCCD0\nFLIGHTS HISTORY\nKPO989\n10 Sep 2026\n2:32\nLanded 18:04\nSTD\n14:40\nATD\n15:32\nSTA\n18:02\nFROM\nMiami (OPF)\nTO\nWesthampton Beach (FOK)\nKPO989\n09 Sep 2026\n2:10\nLanded 16:58\nSTD\n14:35\nATD\n14:48\nSTA\n17:02\nFROM\nWashington (IAD)\nTO\nMiami (OPF)\nKPO989\n08 Sep 2026\n2:15\nLanded 15:31\nSTD\n12:30\nATD\n13:16\nSTA\n15:37\nFROM\nNaples (APF)\nTO\nWashington (IAD)`;
 
-const ISO_CODES=`AD AE AF AG AI AL AM AO AQ AR AS AT AU AW AX AZ BA BB BD BE BF BG BH BI BJ BL BM BN BO BQ BR BS BT BV BW BY BZ CA CC CD CF CG CH CI CK CL CM CN CO CR CU CV CW CX CY CZ DE DJ DK DM DO DZ EC EE EG EH ER ES ET FI FJ FK FM FO FR GA GB GD GE GF GG GH GI GL GM GN GP GQ GR GS GT GU GW GY HK HM HN HR HT HU ID IE IL IM IN IO IQ IR IS IT JE JM JO JP KE KG KH KI KM KN KP KR KW KY KZ LA LB LC LI LK LR LS LT LU LV LY MA MC MD ME MF MG MH MK ML MM MN MO MP MQ MR MS MT MU MV MW MX MY MZ NA NC NE NF NG NI NL NO NP NR NU NZ OM PA PE PF PG PH PK PL PM PN PR PS PT PW PY QA RE RO RS RU RW SA SB SC SD SE SG SH SI SJ SK SL SM SN SO SR SS ST SV SX SY SZ TC TD TF TG TH TJ TK TL TM TN TO TR TT TV TW TZ UA UG UM US UY UZ VA VC VE VG VI VN VU WF WS YE YT ZA ZM ZW`.split(/\s+/);
-function populateTailCountries(){ const sel=$('tailCountry'),dn=new Intl.DisplayNames(['en'],{type:'region'}); sel.innerHTML=''; ISO_CODES.forEach(c=>sel.add(new Option(`${c} — ${dn.of(c)}`,c))); sel.value=state.tailCountry||'US'; }
+const REGISTRATION_COUNTRIES=[
+  ['US','United States','N'],
+  ['CA','Canada','C-F / C-G'],
+  ['GB','United Kingdom','G-'],
+  ['DE','Germany','D-'],
+  ['FR','France','F-'],
+  ['AU','Australia','VH-'],
+  ['NZ','New Zealand','ZK- / ZL- / ZM-'],
+  ['IE','Ireland','EI-'],
+  ['NL','Netherlands','PH-'],
+  ['BE','Belgium','OO-'],
+  ['CH','Switzerland','HB-'],
+  ['AT','Austria','OE-'],
+  ['ES','Spain','EC-'],
+  ['PT','Portugal','CS-'],
+  ['IT','Italy','I-'],
+  ['NO','Norway','LN-'],
+  ['SE','Sweden','SE-'],
+  ['DK','Denmark','OY-'],
+  ['FI','Finland','OH-'],
+  ['PL','Poland','SP-'],
+  ['CZ','Czech Republic','OK-'],
+  ['GR','Greece','SX-'],
+  ['JP','Japan','JA'],
+  ['CN','China','B-'],
+  ['KR','South Korea','HL'],
+  ['IN','India','VT-'],
+  ['BR','Brazil','PP- / PR- / PT- / PU-'],
+  ['MX','Mexico','XA- / XB- / XC-'],
+  ['ZA','South Africa','ZS- / ZT- / ZU-'],
+  ['AE','United Arab Emirates','A6-'],
+  ['SA','Saudi Arabia','HZ-'],
+  ['IL','Israel','4X- / 4Z-'],
+  ['TR','Türkiye','TC-'],
+  ['SG','Singapore','9V-'],
+  ['MY','Malaysia','9M-'],
+  ['TH','Thailand','HS-']
+];
+const REG_PREFIXES={
+  US:['N'],CA:['C-F','C-G','CF-','CG-'],GB:['G-'],DE:['D-'],FR:['F-'],AU:['VH-'],NZ:['ZK-','ZL-','ZM-'],IE:['EI-'],NL:['PH-'],BE:['OO-'],CH:['HB-'],AT:['OE-'],ES:['EC-'],PT:['CS-'],IT:['I-'],NO:['LN-'],SE:['SE-'],DK:['OY-'],FI:['OH-'],PL:['SP-'],CZ:['OK-'],GR:['SX-'],JP:['JA'],CN:['B-'],KR:['HL'],IN:['VT-'],BR:['PP-','PR-','PT-','PU-'],MX:['XA-','XB-','XC-'],ZA:['ZS-','ZT-','ZU-'],AE:['A6-'],SA:['HZ-'],IL:['4X-','4Z-'],TR:['TC-'],SG:['9V-'],MY:['9M-'],TH:['HS-']
+};
+const RANDOM_TYPES=['H25B','C25A','C25B','C25C','E545','C750','CL30','CL35','CL60','GLF4','GLF5','GLF6','GL7T','PC24','B350','B738','B737','B739','A319','A320','A321','E145','E170','E190','CRJ2','CRJ7','CRJ9','B763','B772','B77W','B788','B789','A332','A333','A359','A35K'];
+function populateTailCountries(){
+  const sel=$('tailCountry'); sel.innerHTML='';
+  REGISTRATION_COUNTRIES.forEach(([code,name,prefix])=>sel.add(new Option(`${name} — ${prefix}`,code)));
+  const wanted=REGISTRATION_COUNTRIES.some(x=>x[0]===state.tailCountry)?state.tailCountry:'US'; sel.value=wanted; state.tailCountry=wanted;
+}
+function regMatchesCountry(reg,code){
+  const u=String(reg||'').trim().toUpperCase(), prefixes=REG_PREFIXES[code]||[];
+  return prefixes.length ? prefixes.some(p=>u.startsWith(p)) : false;
+}
+function normalizeAdsb(a={}){
+  return {hex:a.hex||'',registration:a.r||a.reg||'',callsign:String(a.flight||'').trim(),aircraft:a.t||a.type||'',operator:a.ownOp||a.owner||'',altitude:a.alt_baro??a.alt_geom??'',lat:a.lat??null,lon:a.lon??null,source:'ADSB.lol'};
+}
+async function fetchJsonStrict(url){
+  const r=await fetch(url,{headers:{Accept:'application/json'}});
+  if(!r.ok) throw new Error(`${r.status} ${r.statusText}`);
+  const ct=(r.headers.get('content-type')||'').toLowerCase();
+  if(!ct.includes('json')) throw new Error('Provider returned non-JSON data');
+  return r.json();
+}
+async function directAdsbTail(country,type){
+  const types=type?[type]:[...RANDOM_TYPES].sort(()=>Math.random()-.5);
+  const tries=Math.min(type?1:14,types.length);
+  let last='No matching live aircraft found.';
+  for(let i=0;i<tries;i++){
+    const t=types[i];
+    try{
+      const j=await fetchJsonStrict(`https://api.adsb.lol/v2/type/${encodeURIComponent(t)}`);
+      const rows=(j.ac||j.aircraft||[]).map(normalizeAdsb).filter(a=>a.registration&&regMatchesCountry(a.registration,country));
+      if(rows.length){const out=rows[Math.floor(Math.random()*rows.length)];out.source='ADSB.lol';return out;}
+      last=`No live ${t} aircraft matched the selected registration country.`;
+    }catch(e){last=e.message; if(type) throw e;}
+  }
+  throw new Error(last);
+}
+async function directOpenSkyTail(country,type){
+  // OpenSky state vectors do not include registrations. We use OpenSky to choose live
+  // ICAO24 aircraft, then resolve registration/type through ADSB.lol and apply the
+  // selected national registration prefix. That keeps this filter about the tail,
+  // not the aircraft's present location or OpenSky origin-country label.
+  const j=await fetchJsonStrict('https://opensky-network.org/api/states/all');
+  const states=[...(j.states||[])].filter(s=>s&&s[0]).sort(()=>Math.random()-.5);
+  const limit=Math.min(states.length,type?120:70);
+  for(const s of states.slice(0,limit)){
+    try{
+      const x=await fetchJsonStrict(`https://api.adsb.lol/v2/icao/${encodeURIComponent(String(s[0]).toLowerCase())}`);
+      const a=(x.ac||x.aircraft||[])[0]; if(!a) continue;
+      const out=normalizeAdsb(a);
+      if(!out.registration||!regMatchesCountry(out.registration,country)) continue;
+      if(type&&String(out.aircraft).toUpperCase()!==type) continue;
+      out.callsign=out.callsign||String(s[1]||'').trim(); out.source='OpenSky + ADSB.lol'; return out;
+    }catch(e){}
+  }
+  throw new Error('OpenSky did not yield a live aircraft matching that registration country/type.');
+}
 async function rollRandomTail(){
   const country=$('tailCountry').value||'US',source=$('tailSource').value||'auto'; let aircraft=$('tailAircraft').value||''; if(aircraft==='CUSTOM') aircraft=$('tailCustomAircraft').value.trim().toUpperCase(); state.tailCountry=country;state.tailSource=source;state.tailAircraft=$('tailAircraft').value||'';saveState();
   $('tailStatus').textContent='Searching live aircraft…'; $('tailStatus').className='status-pill'; $('randomTailBtn').disabled=true;
   try{
-    const r=await fetch(`/api/random-tail?country=${encodeURIComponent(country)}&source=${encodeURIComponent(source)}&type=${encodeURIComponent(aircraft)}`); const j=await r.json(); if(!r.ok)throw Error(j.error||'Lookup failed');
+    let j;
+    if(source==='adsblol') j=await directAdsbTail(country,aircraft);
+    else if(source==='opensky') j=await directOpenSkyTail(country,aircraft);
+    else { try{j=await directAdsbTail(country,aircraft);}catch(first){try{j=await directOpenSkyTail(country,aircraft);}catch(second){throw new Error(`${first.message} OpenSky fallback: ${second.message}`);}} }
     $('tailStatus').textContent=j.source||'Found'; $('tailStatus').className='status-pill good';
-    const hasReg=!!j.registration;
-    $('tailCard').classList.remove('empty'); $('tailCard').innerHTML=`<h3>${esc(j.registration||'Registration unavailable')}</h3><div class="airport-codes">${esc(j.aircraft||'TYPE —')} · ${esc(j.callsign||'NO CALLSIGN')}</div><div class="airport-meta">${esc(j.country||country)} · HEX ${esc(String(j.hex||'').toUpperCase())} · ${esc(j.operator||'Operator unavailable')} · ${esc(j.source||'')}</div><div class="button-row"><button id="openRandomTail" class="btn primary" ${hasReg?'':'disabled'}>Open FR24 tail history</button><button id="tailToPaste" class="btn secondary">Paste & Parse</button></div>`;
+    const hasReg=!!j.registration, rc=REGISTRATION_COUNTRIES.find(x=>x[0]===country);
+    $('tailCard').classList.remove('empty'); $('tailCard').innerHTML=`<h3>${esc(j.registration||'Registration unavailable')}</h3><div class="airport-codes">${esc(j.aircraft||'TYPE —')} · ${esc(j.callsign||'NO CALLSIGN')}</div><div class="airport-meta">${esc(rc?`${rc[1]} registration (${rc[2]})`:country)} · HEX ${esc(String(j.hex||'').toUpperCase())} · ${esc(j.operator||'Operator unavailable')} · ${esc(j.source||'')}</div><div class="button-row"><button id="openRandomTail" class="btn primary" ${hasReg?'':'disabled'}>Open FR24 tail history</button><button id="tailToPaste" class="btn secondary">Paste & Parse</button></div>`;
     if(hasReg)$('openRandomTail').onclick=()=>openFR24Path(`/data/aircraft/${encodeURIComponent(j.registration.toLowerCase())}`); $('tailToPaste').onclick=()=>switchPage('paste');
-  }catch(e){ $('tailStatus').textContent='Lookup failed'; $('tailStatus').className='status-pill bad'; $('tailCard').classList.remove('empty'); $('tailCard').innerHTML=`<div class="notice warning">${esc(e.message)}<br><br>Try again, change aircraft type, or switch data source. Auto mode will fall back between providers.</div>`; }
+  }catch(e){ $('tailStatus').textContent='Lookup failed'; $('tailStatus').className='status-pill bad'; $('tailCard').classList.remove('empty'); $('tailCard').innerHTML=`<div class="notice warning">${esc(e.message)}<br><br>Try again, select another aircraft type, or switch provider.</div>`; }
   finally{$('randomTailBtn').disabled=false;}
 }
 

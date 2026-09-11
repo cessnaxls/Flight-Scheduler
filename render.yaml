@@ -1,11 +1,10 @@
 services:
   - type: web
     name: lineforge-dispatch
-    runtime: node
-    plan: free
-    buildCommand: npm install
-    startCommand: npm start
-    healthCheckPath: /
-    envVars:
-      - key: NODE_VERSION
-        value: 22.14.0
+    runtime: static
+    staticPublishPath: .
+    buildCommand: echo "No build required"
+    routes:
+      - type: rewrite
+        source: /*
+        destination: /index.html
