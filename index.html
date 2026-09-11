@@ -83,10 +83,34 @@
       <div class="grid two">
         <article class="panel">
           <div class="panel-head"><h2>Random live tail</h2><span class="muted">OpenSky / ADSB.lol</span></div>
-          <div class="form-grid two">
+          <div class="form-grid three">
             <label>Country code<select id="tailCountry"></select></label>
-            <label>Source<select id="tailSource"><option value="auto">Auto · OpenSky + ADSB.lol</option><option value="opensky">OpenSky</option><option value="adsblol">ADSB.lol</option></select></label>
+            <label>Aircraft selector<select id="tailAircraft">
+              <option value="">Any aircraft</option>
+              <option value="H25B">H25B · Hawker 800/850</option>
+              <option value="C25A">C25A · Citation CJ2</option>
+              <option value="C25B">C25B · Citation CJ3</option>
+              <option value="C25C">C25C · Citation CJ4</option>
+              <option value="E545">E545 · Citation Latitude</option>
+              <option value="C750">C750 · Citation X</option>
+              <option value="CL30">CL30 · Challenger 300</option>
+              <option value="CL35">CL35 · Challenger 350</option>
+              <option value="CL60">CL60 · Challenger 600</option>
+              <option value="GLF4">GLF4 · Gulfstream IV</option>
+              <option value="GLF5">GLF5 · Gulfstream V/G550</option>
+              <option value="GLF6">GLF6 · Gulfstream G650</option>
+              <option value="GL7T">GL7T · Global 7500</option>
+              <option value="PC24">PC24 · Pilatus PC-24</option>
+              <option value="B350">B350 · King Air 350</option>
+              <option value="B738">B738 · Boeing 737-800</option>
+              <option value="A320">A320 · Airbus A320</option>
+              <option value="E145">E145 · Embraer 145</option>
+              <option value="CRJ2">CRJ2 · CRJ-200</option>
+              <option value="CUSTOM">Custom ICAO type…</option>
+            </select></label>
+            <label>Source<select id="tailSource"><option value="auto">Auto · ADSB.lol first</option><option value="adsblol">ADSB.lol</option><option value="opensky">OpenSky</option></select></label>
           </div>
+          <div id="tailCustomWrap" class="form-grid hidden"><label>Custom aircraft ICAO type<input id="tailCustomAircraft" maxlength="8" placeholder="e.g. H25B"></label></div>
           <div class="button-row"><button id="randomTailBtn" class="btn primary">Roll random tail</button></div>
           <div id="tailCard" class="airport-card empty">Roll a live tail to begin.</div>
         </article>
@@ -98,7 +122,7 @@
             <li>Open its FR24 aircraft-history page in a Safari tab.</li>
             <li>Copy the FR24 page and paste it into <strong>Paste & Parse</strong>.</li>
           </ol>
-          <div class="notice">OpenSky supplies country-aware live state vectors; ADSB.lol is used to resolve/enrich registration and aircraft details when available.</div>
+          <div class="notice">The aircraft selector uses ICAO type codes. Auto mode tries ADSB.lol first and falls back to OpenSky when needed. Country filtering is based on the aircraft registration/origin country, not its present geographic position.</div>
         </article>
       </div>
     </section>

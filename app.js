@@ -5,7 +5,7 @@ const DEFAULTS = {
   airportsUrl: 'https://raw.githubusercontent.com/jpatokal/openflights/master/data/airports.dat',
   airlinesUrl: 'https://raw.githubusercontent.com/jpatokal/openflights/master/data/airlines.dat',
   airportSizesUrl: 'https://davidmegginson.github.io/ourairports-data/airports.csv',
-  airportCountry: 'United States', tailCountry: 'US', tailSource: 'auto',
+  airportCountry: 'United States', tailCountry: 'US', tailSource: 'auto', tailAircraft: '',
   theme: 'light', opType: 'part135', paxWeight: 220, dutyBefore: 60, dutyAfter: 30,
   holding: [], scheduled: [], recentAirports: [],
   aircraftProfiles: [
@@ -125,7 +125,16 @@ function chooseAirport(a){
   $('airportCard').innerHTML=`<h3>${esc(a.name)}</h3><div class="airport-codes">${esc(a.iata||'—')} / ${esc(a.icao||'—')}</div><div class="airport-meta">${esc(a.city)}, ${esc(a.country)} · ${esc((a.size||'unknown').toUpperCase())} · ${a.lat.toFixed(3)}, ${a.lon.toFixed(3)} · ${esc(a.tz)}</div><div class="button-row"><button class="btn primary" id="openDep">Open FR24 departures</button><button class="btn primary" id="openArr">Open FR24 arrivals</button><button class="btn secondary" id="goPaste">Paste & Parse</button></div>`;
   $('openDep').onclick=()=>openFR24Airport(a,'departures'); $('openArr').onclick=()=>openFR24Airport(a,'arrivals'); $('goPaste').onclick=()=>switchPage('paste');
 }
-function openFR24Path(path){ window.open('/fr24?path='+encodeURIComponent(path),'fr24Safari'); }
+async function openFR24Path(path){
+  const url='https://www.flightradar24.com'+path;
+  // iPadOS can hand ordinary FR24 links to the installed FR24 app via Universal Links.
+  // A web page cannot disable that association. The reliable browser-only workflow is
+  // to copy the URL and open a same-origin Safari helper tab, where the user pastes it
+  // into Safari's address bar. This app never directly navigates to the Universal Link.
+  try{ await navigator.clipboard.writeText(url); }catch(e){ localStorage.setItem('lineforge-fr24-url',url); }
+  const w=window.open('/fr24?path='+encodeURIComponent(path),'fr24Safari');
+  if(!w) alert('Safari blocked the helper tab. FR24 URL copied: '+url);
+}
 function openFR24Airport(a,kind){ const code=(a.iata||a.icao).toLowerCase(); openFR24Path(`/data/airports/${encodeURIComponent(code)}/${kind}`); }
 function renderRecent(){ const box=$('recentAirports'); box.innerHTML=''; state.recentAirports.forEach(code=>{const a=airportByCode(code); if(!a)return; const b=document.createElement('button');b.className='chip';b.textContent=`${a.iata||a.icao} · ${a.city}`;b.onclick=()=>chooseAirport(a);box.appendChild(b);}); if(!box.children.length)box.innerHTML='<span class="muted">No recent airports.</span>'; }
 
@@ -337,21 +346,22 @@ const TAIL_SAMPLE=`Flight history for aircraft - N989CL\nAIRCRAFT Hawker 800XP\n
 const ISO_CODES=`AD AE AF AG AI AL AM AO AQ AR AS AT AU AW AX AZ BA BB BD BE BF BG BH BI BJ BL BM BN BO BQ BR BS BT BV BW BY BZ CA CC CD CF CG CH CI CK CL CM CN CO CR CU CV CW CX CY CZ DE DJ DK DM DO DZ EC EE EG EH ER ES ET FI FJ FK FM FO FR GA GB GD GE GF GG GH GI GL GM GN GP GQ GR GS GT GU GW GY HK HM HN HR HT HU ID IE IL IM IN IO IQ IR IS IT JE JM JO JP KE KG KH KI KM KN KP KR KW KY KZ LA LB LC LI LK LR LS LT LU LV LY MA MC MD ME MF MG MH MK ML MM MN MO MP MQ MR MS MT MU MV MW MX MY MZ NA NC NE NF NG NI NL NO NP NR NU NZ OM PA PE PF PG PH PK PL PM PN PR PS PT PW PY QA RE RO RS RU RW SA SB SC SD SE SG SH SI SJ SK SL SM SN SO SR SS ST SV SX SY SZ TC TD TF TG TH TJ TK TL TM TN TO TR TT TV TW TZ UA UG UM US UY UZ VA VC VE VG VI VN VU WF WS YE YT ZA ZM ZW`.split(/\s+/);
 function populateTailCountries(){ const sel=$('tailCountry'),dn=new Intl.DisplayNames(['en'],{type:'region'}); sel.innerHTML=''; ISO_CODES.forEach(c=>sel.add(new Option(`${c} — ${dn.of(c)}`,c))); sel.value=state.tailCountry||'US'; }
 async function rollRandomTail(){
-  const country=$('tailCountry').value||'US',source=$('tailSource').value||'auto'; state.tailCountry=country;state.tailSource=source;saveState();
+  const country=$('tailCountry').value||'US',source=$('tailSource').value||'auto'; let aircraft=$('tailAircraft').value||''; if(aircraft==='CUSTOM') aircraft=$('tailCustomAircraft').value.trim().toUpperCase(); state.tailCountry=country;state.tailSource=source;state.tailAircraft=$('tailAircraft').value||'';saveState();
   $('tailStatus').textContent='Searching live aircraft…'; $('tailStatus').className='status-pill'; $('randomTailBtn').disabled=true;
   try{
-    const r=await fetch(`/api/random-tail?country=${encodeURIComponent(country)}&source=${encodeURIComponent(source)}`); const j=await r.json(); if(!r.ok)throw Error(j.error||'Lookup failed');
+    const r=await fetch(`/api/random-tail?country=${encodeURIComponent(country)}&source=${encodeURIComponent(source)}&type=${encodeURIComponent(aircraft)}`); const j=await r.json(); if(!r.ok)throw Error(j.error||'Lookup failed');
     $('tailStatus').textContent=j.source||'Found'; $('tailStatus').className='status-pill good';
     const hasReg=!!j.registration;
     $('tailCard').classList.remove('empty'); $('tailCard').innerHTML=`<h3>${esc(j.registration||'Registration unavailable')}</h3><div class="airport-codes">${esc(j.aircraft||'TYPE —')} · ${esc(j.callsign||'NO CALLSIGN')}</div><div class="airport-meta">${esc(j.country||country)} · HEX ${esc(String(j.hex||'').toUpperCase())} · ${esc(j.operator||'Operator unavailable')} · ${esc(j.source||'')}</div><div class="button-row"><button id="openRandomTail" class="btn primary" ${hasReg?'':'disabled'}>Open FR24 tail history</button><button id="tailToPaste" class="btn secondary">Paste & Parse</button></div>`;
     if(hasReg)$('openRandomTail').onclick=()=>openFR24Path(`/data/aircraft/${encodeURIComponent(j.registration.toLowerCase())}`); $('tailToPaste').onclick=()=>switchPage('paste');
-  }catch(e){ $('tailStatus').textContent='Lookup failed'; $('tailStatus').className='status-pill bad'; $('tailCard').classList.remove('empty'); $('tailCard').innerHTML=`<div class="notice warning">${esc(e.message)}<br><br>Try again or switch data source. OpenSky may rate-limit anonymous requests.</div>`; }
+  }catch(e){ $('tailStatus').textContent='Lookup failed'; $('tailStatus').className='status-pill bad'; $('tailCard').classList.remove('empty'); $('tailCard').innerHTML=`<div class="notice warning">${esc(e.message)}<br><br>Try again, change aircraft type, or switch data source. Auto mode will fall back between providers.</div>`; }
   finally{$('randomTailBtn').disabled=false;}
 }
 
 // Wire UI
 $('themeBtn').onclick=()=>{state.theme=state.theme==='dark'?'light':'dark';saveState();applyTheme();};
-populateTailCountries(); $('tailSource').value=state.tailSource||'auto'; $('randomTailBtn').onclick=rollRandomTail; $('tailCountry').onchange=()=>{state.tailCountry=$('tailCountry').value;saveState();}; $('tailSource').onchange=()=>{state.tailSource=$('tailSource').value;saveState();};
+populateTailCountries(); $('tailSource').value=state.tailSource||'auto'; $('tailAircraft').value=state.tailAircraft||''; $('tailCustomWrap').classList.toggle('hidden',$('tailAircraft').value!=='CUSTOM');
+$('randomTailBtn').onclick=rollRandomTail; $('tailCountry').onchange=()=>{state.tailCountry=$('tailCountry').value;saveState();}; $('tailSource').onchange=()=>{state.tailSource=$('tailSource').value;saveState();}; $('tailAircraft').onchange=()=>{state.tailAircraft=$('tailAircraft').value; $('tailCustomWrap').classList.toggle('hidden',$('tailAircraft').value!=='CUSTOM'); saveState();};
 $('randomAirportBtn').onclick=()=>{const x=eligibleAirports();if(!x.length)return alert('No airports match those filters.');chooseAirport(x[Math.floor(Math.random()*x.length)]);};
 $('searchAirportBtn').onclick=()=>{const q=$('airportSearch').value.trim().toLowerCase();if(!q)return;const a=airports.find(x=>x.iata.toLowerCase()===q||x.icao.toLowerCase()===q)||airports.find(x=>`${x.name} ${x.city} ${x.country}`.toLowerCase().includes(q));if(a)chooseAirport(a);else alert('No matching airport found.');};
 $('airportSearch').addEventListener('keydown',e=>{if(e.key==='Enter')$('searchAirportBtn').click();});
