@@ -92,33 +92,158 @@ async function randomFromOpenSky(country,type){
 }
 
 
+function normalizeAircraftType(raw=''){
+  const s=String(raw||'').trim();
+  if(!s) return '';
+  const u=s.toUpperCase().replace(/\s+/g,' ');
+  const exact={
+    'BOEING 737 MAX 8':'B38M','BOEING 737 MAX 9':'B39M','BOEING 737-700':'B737','BOEING 737-800':'B738','BOEING 737-900':'B739',
+    'BOEING 757-200':'B752','BOEING 757-300':'B753','BOEING 767-300':'B763','BOEING 747-8':'B748',
+    'BOEING 777-200':'B772','BOEING 777-200ER':'B772','BOEING 777-200LR':'B77L','BOEING 777-300ER':'B77W',
+    'BOEING 787-8':'B788','BOEING 787-9':'B789','BOEING 787-10':'B78X','788':'B788','789':'B789',
+    'AIRBUS A319':'A319','AIRBUS A320':'A320','AIRBUS A320NEO':'A20N','AIRBUS A321':'A321','AIRBUS A321NEO':'A21N',
+    'AIRBUS A330-900 NEO':'A339','AIRBUS A330-900NEO':'A339','AIRBUS A350-900':'A359','AIRBUS A350-1000':'A35K','AIRBUS A380-800':'A388',
+    'EMBRAER E175 (LONG)':'E75L','EMBRAER E175':'E75L','EMBRAER E195-E2':'E295','MITSUBISHI CRJ-700':'CRJ7'
+  };
+  if(exact[u]) return exact[u];
+  // FR24 sometimes already exposes a compact ICAO equipment code on business/GA flights.
+  if(/^[A-Z][A-Z0-9]{2,3}$/.test(u)) return u;
+  return u;
+}
+
+function looksLikeRegistration(line=''){
+  const u=String(line||'').trim().toUpperCase();
+  if(!u || /^(GATE|RUNWAY|ESTIMATED|SCHEDULED|DEPARTED|LANDED|CANCELED|CANCELLED|DELAYED|HISTORY)\b/.test(u)) return false;
+  return /^(N\d{1,5}[A-Z]{0,2}|C-[FGI][A-Z0-9]{3,4}|G-[A-Z0-9]{4}|D-[A-Z0-9]{4}|F-[A-Z0-9]{4}|VH-[A-Z0-9]{3}|ZK-[A-Z0-9]{3}|EI-[A-Z0-9]{3}|PH-[A-Z0-9]{3}|OO-[A-Z0-9]{3}|HB-[A-Z0-9]{3,5}|OE-[A-Z0-9]{3,4}|EC-[A-Z0-9]{3}|CS-[A-Z0-9]{3}|I-[A-Z0-9]{4}|LN-[A-Z0-9]{3}|SE-[A-Z0-9]{3}|OY-[A-Z0-9]{3}|OH-[A-Z0-9]{3}|SP-[A-Z0-9]{3}|OK-[A-Z0-9]{3}|SX-[A-Z0-9]{3}|JA\d{3,4}[A-Z]?|B-[A-Z0-9]{4}|HL\d{4}|VT-[A-Z0-9]{3}|P[PRTU]-[A-Z0-9]{3}|X[ABC]-[A-Z0-9]{3}|ZS-[A-Z0-9]{3}|A6-[A-Z0-9]{3}|HZ-[A-Z0-9]{3}|4[ZX]-[A-Z0-9]{3}|TC-[A-Z0-9]{3}|9[VHM]-[A-Z0-9]{3}|HS-[A-Z0-9]{3})$/.test(u);
+}
+
 function parseFlight(x={}){
   return {
     id:`srv-${Date.now().toString(36)}-${Math.random().toString(36).slice(2,9)}`,
     flight:x.flight||'', date:x.date||'',
     origin:String(x.origin||'').toUpperCase(), dest:String(x.dest||'').toUpperCase(),
+    originIcao:String(x.originIcao||'').toUpperCase(), destIcao:String(x.destIcao||'').toUpperCase(),
     originName:x.originName||'', destName:x.destName||'',
-    aircraft:String(x.aircraft||'').toUpperCase(), reg:String(x.reg||'').toUpperCase(),
+    aircraft:normalizeAircraftType(x.aircraft||''), aircraftName:x.aircraftName||x.aircraft||'', reg:String(x.reg||'').toUpperCase(),
     std:x.std||'', sta:x.sta||'', atd:x.atd||'', status:x.status||'',
-    airline:x.airline||'', operatorCode:String(x.operatorCode||'').toUpperCase(), flightTime:x.flightTime||''
+    airline:x.airline||'', operatorCode:String(x.operatorCode||'').toUpperCase(), flightTime:x.flightTime||'',
+    stdEstimated:!!x.stdEstimated, staEstimated:!!x.staEstimated
   };
 }
 function dedupeParsed(arr){
   const seen=new Set();
-  return arr.filter(f=>{const k=[f.flight,f.origin,f.dest,f.std,f.reg].join('|');if(seen.has(k))return false;seen.add(k);return true;});
+  return arr.filter(f=>{const k=[f.flight,f.origin,f.dest,f.std,f.sta,f.reg].join('|');if(seen.has(k))return false;seen.add(k);return true;});
 }
 
 function parseMobileAircraftLine(line=''){
   const compact=String(line).trim();
   const tm=compact.match(/^([A-Z0-9]{3,4})(.*)$/); if(!tm) return {aircraft:'',reg:'',airline:''};
   const aircraft=tm[1],rest=tm[2]||'';
-  // Common registration formats seen in FR24's compact mobile copy output.
   const patterns=[/^(N[0-9]{1,5}[A-Z]{0,2})(.*)$/i,/^([0-9][A-Z]-[A-Z0-9]{3,5})(.*)$/i,/^([A-Z]{1,2}-[A-Z0-9]{3,6})(.*)$/i,/^([A-Z]{2}[0-9]{2,5})(.*)$/i];
   for(const rx of patterns){const m=rest.match(rx);if(m)return {aircraft,reg:m[1].toUpperCase(),airline:(m[2]||'').replace(/^-$/,'').trim()};}
   return {aircraft,reg:'',airline:rest.replace(/^-$/,'').trim()};
 }
 
+let airportDbPromise=null;
+async function airportDb(){
+  if(airportDbPromise) return airportDbPromise;
+  airportDbPromise=(async()=>{
+    const urls=[
+      'https://raw.githubusercontent.com/jpatokal/openflights/master/data/airports.dat',
+      'https://raw.githubusercontent.com/jpatokal/openflights/master/data/airports-extended.dat'
+    ];
+    let text='';
+    for(const url of urls){ try{ const r=await fetch(url,{signal:AbortSignal.timeout(2500)}); if(r.ok){text=await r.text(); if(text)break;} }catch{} }
+    const byCode=new Map();
+    for(const line of text.split(/\r?\n/)){
+      if(!line)continue;
+      const row=[]; let cur='',q=false;
+      for(let i=0;i<line.length;i++){const c=line[i];if(c==='"'){if(q&&line[i+1]==='"'){cur+='"';i++;}else q=!q;}else if(c===','&&!q){row.push(cur);cur='';}else cur+=c;}row.push(cur);
+      if(row.length<8)continue;
+      const iata=row[4]==='\\N'?'':row[4].toUpperCase(), icao=row[5]==='\\N'?'':row[5].toUpperCase(), lat=+row[6],lon=+row[7];
+      if(!Number.isFinite(lat)||!Number.isFinite(lon))continue;
+      const a={iata,icao,lat,lon,name:row[1]||''}; if(iata)byCode.set(iata,a); if(icao)byCode.set(icao,a);
+    }
+    return byCode;
+  })();
+  return airportDbPromise;
+}
+function haversineNm(a,b){
+  if(!a||!b)return null; const R=3440.065, rad=x=>x*Math.PI/180;
+  const dlat=rad(b.lat-a.lat),dlon=rad(b.lon-a.lon); const x=Math.sin(dlat/2)**2+Math.cos(rad(a.lat))*Math.cos(rad(b.lat))*Math.sin(dlon/2)**2;
+  return 2*R*Math.asin(Math.min(1,Math.sqrt(x)));
+}
+function aircraftCruiseKts(type=''){
+  const t=normalizeAircraftType(type);
+  if(/^(CNC|C208|PC12|B350|BE\d|PA\d)/.test(t))return 280;
+  if(/^(E75L|E170|E190|E195|E295|CRJ)/.test(t))return 430;
+  if(/^(H25B|C25|E5|C7|CL3|CL6|GLF|GL7|PC24)/.test(t))return 440;
+  return 455;
+}
+function addMinutes(hhmm,mins){
+  const m=String(hhmm||'').match(/^(\d{2}):(\d{2})$/);if(!m)return '';
+  let n=+m[1]*60 + +m[2] + Math.round(mins); n=((n%1440)+1440)%1440;
+  return String(Math.floor(n/60)).padStart(2,'0')+':'+String(n%60).padStart(2,'0');
+}
+async function fillMissingScheduleTimes(flights){
+  let db; try{db=await airportDb();}catch{return flights;}
+  for(const f of flights){
+    if(f.std && f.sta || !f.origin || !f.dest)continue;
+    const a=db.get(f.originIcao)||db.get(f.origin), b=db.get(f.destIcao)||db.get(f.dest); const nm=haversineNm(a,b); if(!nm)continue;
+    // Provisional gate-to-gate estimate only. SimBrief remains the authoritative planning step.
+    const airborne=nm/aircraftCruiseKts(f.aircraft)*60;
+    const block=Math.max(35,Math.min(900,airborne + (nm<250?25:nm<800?35:45)));
+    f.flightTime=`${Math.floor(block/60)}:${String(Math.round(block%60)).padStart(2,'0')}`;
+    if(f.std&&!f.sta){f.sta=addMinutes(f.std,block);f.staEstimated=true;}
+    if(f.sta&&!f.std){f.std=addMinutes(f.sta,-block);f.stdEstimated=true;}
+  }
+  return flights;
+}
+
+function parseNewAirportBoard(text){
+  const lines=String(text||'').split(/\r?\n/).map(s=>s.trim()).filter(Boolean);
+  let airportIata='',airportIcao='',section='';
+  for(const line of lines){
+    const m=line.match(/\b([A-Z0-9]{3})\/([A-Z0-9]{4})\s+(departures|arrivals)\b/i);
+    if(m){airportIata=m[1].toUpperCase();airportIcao=m[2].toUpperCase();section=m[3].toLowerCase();break;}
+  }
+  if(!section){
+    const joined=lines.join(' '); section=/\bTO\b.*\bAIRLINE\b.*\bAIRCRAFT\b/i.test(joined)?'departures':/\bFROM\b.*\bAIRLINE\b.*\bAIRCRAFT\b/i.test(joined)?'arrivals':'';
+  }
+  if(!section || !airportIata) return null;
+  let start=lines.findIndex((x,i)=>x==='STATUS' && lines.slice(Math.max(0,i-8),i+1).some(y=>y==='TIME'));
+  if(start<0) start=lines.findIndex(x=>/^Earlier flights$/i.test(x));
+  if(start<0) start=0;
+  const flights=[];
+  const isTime=x=>/^\d{2}:\d{2}$/.test(x);
+  const isFlight=x=>/^[A-Z0-9]{2,8}$/.test(x) && /\d/.test(x);
+  const isNoise=x=>/^\(\+\d+\)$/.test(x)||/^Also marketed as /i.test(x)||/^History\b/i.test(x);
+  for(let i=start;i<lines.length-1;i++){
+    if(!isTime(lines[i])) continue;
+    let j=i+1;
+    while(j<lines.length && isNoise(lines[j]))j++;
+    if(!isFlight(lines[j]||''))continue;
+    const time=lines[i], flight=lines[j];
+    let k=j+1; while(k<lines.length && (isNoise(lines[k])||lines[k]===flight))k++;
+    const nextStart=(()=>{for(let q=k;q<lines.length-1;q++){if(isTime(lines[q])){let z=q+1;while(z<lines.length&&isNoise(lines[z]))z++;if(isFlight(lines[z]||''))return q;}}return lines.length;})();
+    const block=lines.slice(k,nextStart);
+    const dirLabel=section==='departures'?'To:':'From:';
+    const di=block.findIndex(x=>x.toLowerCase()===dirLabel.toLowerCase()); if(di<0){i=nextStart-1;continue;}
+    const otherName=block[di+1]||'', otherIata=(block[di+2]||'').toUpperCase(), otherIcao=(block[di+3]||'').toUpperCase();
+    if(!/^[A-Z0-9]{3}$/.test(otherIata)||!/^[A-Z0-9]{4}$/.test(otherIcao)){i=nextStart-1;continue;}
+    const airline=block[di+4]||''; const aircraftRaw=block[di+5]||'';
+    let reg=''; const maybeReg=block[di+6]||''; if(looksLikeRegistration(maybeReg))reg=maybeReg;
+    const status=(block.find(x=>/^(Estimated|Scheduled|Departed|Landed|Delayed|Canceled|Cancelled|Diverted)\b/i.test(x))||'').replace(/\s+/g,' ');
+    const origin=section==='departures'?airportIata:otherIata, dest=section==='departures'?otherIata:airportIata;
+    const originIcao=section==='departures'?airportIcao:otherIcao, destIcao=section==='departures'?otherIcao:airportIcao;
+    flights.push(parseFlight({flight,date:new Date().toISOString().slice(0,10),origin,dest,originIcao,destIcao,originName:section==='departures'?'':otherName,destName:section==='departures'?otherName:'',aircraft:aircraftRaw,aircraftName:aircraftRaw,reg,std:section==='departures'?time:'',sta:section==='arrivals'?time:'',status,airline}));
+    i=nextStart-1;
+  }
+  return {type:'airport',meta:{airportCode:airportIata,airportIcao,section,format:'fr24-2026-live-board'},flights:dedupeParsed(flights)};
+}
+
 function parseAirportText(text){
+  const modern=parseNewAirportBoard(text); if(modern?.flights?.length)return modern;
   const lines=String(text||'').split(/\r?\n/).map(s=>s.trim()).filter(Boolean);
   let airportCode='';
   for(const line of lines){const m=line.match(/^([A-Z0-9]{3})\/([A-Z0-9]{4})$/);if(m){airportCode=m[1];break;}}
@@ -141,7 +266,7 @@ function parseAirportText(text){
       flights.push(parseFlight({flight:m[2]||'',origin,dest,aircraft:a.aircraft,reg:a.reg,std:section==='departures'?m[1]:'',sta:section==='arrivals'?m[1]:'',status,airline:a.airline}));
     }
   }
-  return {type:'airport',meta:{airportCode,section},flights:dedupeParsed(flights)};
+  return {type:'airport',meta:{airportCode,section,format:'legacy'},flights:dedupeParsed(flights)};
 }
 function parseTailText(text){
   const one=String(text||'').replace(/\s+/g,' ').trim();
@@ -158,14 +283,16 @@ function parseTailText(text){
   let m; while((m=rx.exec(one))) flights.push(parseFlight({flight:m[1],date:m[2],flightTime:m[3],status:'Landed '+m[4],std:m[5],atd:m[6],sta:m[7],origin:m[9],originName:m[8],dest:m[11],destName:m[10],aircraft:meta.typeCode,reg:meta.registration,airline:meta.operator,operatorCode:meta.operatorCode}));
   return {type:'tail',meta,flights};
 }
-function parseFr24(text){
+async function parseFr24(text){
   const t=String(text||'').trim(); if(!t) throw new Error('No FR24 text was supplied.');
-  return /Flight history for aircraft|FLIGHTS HISTORY|TYPE CODE/i.test(t)?parseTailText(t):parseAirportText(t);
+  const out=/Flight history for aircraft|FLIGHTS HISTORY|TYPE CODE/i.test(t)?parseTailText(t):parseAirportText(t);
+  if(out.type==='airport') await fillMissingScheduleTimes(out.flights);
+  return out;
 }
 
-app.post('/api/parse-fr24',(req,res)=>{
+app.post('/api/parse-fr24',async (req,res)=>{
   try{
-    const out=parseFr24(req.body?.text);
+    const out=await parseFr24(req.body?.text);
     if(!out.flights.length) return res.status(422).json({error:'No flights were recognized in the copied FR24 text.'});
     res.json(out);
   }catch(e){res.status(400).json({error:e.message||'Unable to parse FR24 text.'});}
