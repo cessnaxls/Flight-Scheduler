@@ -1,0 +1,200 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
+  <meta name="theme-color" content="#e8edf3" />
+  <title>LineForge Dispatch</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <div class="brand-mark">LF</div>
+      <div><div class="brand-name">LINEFORGE</div><div class="brand-sub">Dispatch & Pairing Builder</div></div>
+    </div>
+    <div class="top-actions">
+      <span id="utcClock" class="utc-clock">--:--:--Z</span>
+      <button id="themeBtn" class="btn small secondary">Dark mode</button>
+    </div>
+  </header>
+
+  <nav class="tabs" aria-label="Primary">
+    <button class="tab active" data-page="finder">Airport Desk</button>
+    <button class="tab" data-page="paste">Paste & Parse</button>
+    <button class="tab" data-page="holding">Holding Area <span id="holdingBadge" class="badge">0</span></button>
+    <button class="tab" data-page="calendar">Trip Board</button>
+    <button class="tab" data-page="settings">Settings</button>
+  </nav>
+
+  <main>
+    <section id="page-finder" class="page active">
+      <div class="page-title-row">
+        <div><h1>Airport Desk</h1><p>Pick an airport, open FR24 arrivals or departures, then paste the page back into LineForge.</p></div>
+        <div id="dbStatus" class="status-pill">Loading airport database…</div>
+      </div>
+
+      <div class="grid two">
+        <article class="panel">
+          <div class="panel-head"><h2>Random airport generator</h2><span class="muted">OpenFlights airports.dat</span></div>
+          <div class="form-grid three">
+            <label>Country<select id="countryFilter"><option value="">Any country</option></select></label>
+            <label>Code requirement<select id="codeFilter"><option value="iata">IATA required</option><option value="icao">ICAO required</option><option value="both">IATA + ICAO</option><option value="any">Any airport</option></select></label>
+            <label>Search<input id="airportSearch" placeholder="IND, KOPF, Opa Locka…" /></label>
+          </div>
+          <div class="button-row">
+            <button id="randomAirportBtn" class="btn primary">Roll random airport</button>
+            <button id="searchAirportBtn" class="btn secondary">Find airport</button>
+          </div>
+          <div id="airportCard" class="airport-card empty">Choose or roll an airport.</div>
+        </article>
+
+        <article class="panel">
+          <div class="panel-head"><h2>FR24 workflow</h2><span class="muted">Manual copy/paste — no scraping</span></div>
+          <ol class="workflow">
+            <li>Choose an airport on the left.</li>
+            <li>Open <strong>Departures</strong> or <strong>Arrivals</strong> in Flightradar24.</li>
+            <li>Copy the visible page text.</li>
+            <li>Return here and use <strong>Paste & Parse</strong>.</li>
+          </ol>
+          <div class="notice">LineForge assumes your FR24 account is displaying airport times in <strong>UTC/Zulu</strong>. Imported times are preserved as shown.</div>
+        </article>
+      </div>
+
+      <article class="panel spacer-top">
+        <div class="panel-head"><h2>Recent airport selections</h2><button id="clearRecentBtn" class="btn small ghost">Clear</button></div>
+        <div id="recentAirports" class="chip-row"></div>
+      </article>
+    </section>
+
+    <section id="page-paste" class="page">
+      <div class="page-title-row"><div><h1>Paste & Parse</h1><p>Paste either an FR24 airport arrivals/departures page or an aircraft-tail history page.</p></div></div>
+      <div class="grid paste-layout">
+        <article class="panel">
+          <div class="panel-head"><h2>Clipboard text</h2><span id="parseHint" class="muted">Auto-detects page type</span></div>
+          <textarea id="pasteBox" class="paste-box" placeholder="Paste copied Flightradar24 page text here…"></textarea>
+          <div class="button-row">
+            <button id="parseBtn" class="btn primary">Parse text</button>
+            <button id="sampleAirportBtn" class="btn secondary">Load airport sample</button>
+            <button id="sampleTailBtn" class="btn secondary">Load tail sample</button>
+            <button id="clearPasteBtn" class="btn ghost">Clear</button>
+          </div>
+        </article>
+        <aside class="panel compact">
+          <div class="panel-head"><h2>Detected source</h2></div>
+          <div id="sourceSummary" class="source-summary">Nothing parsed yet.</div>
+        </aside>
+      </div>
+
+      <article class="panel spacer-top">
+        <div class="panel-head"><h2 id="resultsTitle">Parsed flights</h2><span id="resultsCount" class="badge">0</span></div>
+        <div class="table-wrap"><table class="data-table"><thead><tr><th>Flight</th><th>Date</th><th>Route</th><th>Aircraft</th><th>Tail</th><th>STD</th><th>STA</th><th>Status</th><th>Actions</th></tr></thead><tbody id="resultsBody"><tr><td colspan="9" class="empty-cell">Paste a page to begin.</td></tr></tbody></table></div>
+      </article>
+    </section>
+
+    <section id="page-holding" class="page">
+      <div class="page-title-row"><div><h1>Holding Area</h1><p>Flights waiting to be assigned to your trip calendar.</p></div><button id="rollAllBtn" class="btn primary">Random-roll all unscheduled</button></div>
+      <article class="panel">
+        <div class="table-wrap"><table class="data-table"><thead><tr><th>Flight</th><th>Route</th><th>Aircraft</th><th>STD</th><th>STA</th><th>Planning</th><th>Schedule</th></tr></thead><tbody id="holdingBody"></tbody></table></div>
+      </article>
+    </section>
+
+    <section id="page-calendar" class="page">
+      <div class="page-title-row calendar-header">
+        <div><h1>Trip Board</h1><p>FLICA-style schedule view with planned duty windows.</p></div>
+        <div class="button-row tight">
+          <button class="btn secondary range-btn active" data-range="3">3 day</button>
+          <button class="btn secondary range-btn" data-range="7">7 day</button>
+          <button class="btn secondary range-btn" data-range="14">2 week</button>
+          <button class="btn secondary range-btn" data-range="30">1 month</button>
+        </div>
+      </div>
+      <div class="calendar-nav panel compact">
+        <button id="prevRange" class="btn small secondary">←</button>
+        <strong id="rangeLabel"></strong>
+        <button id="todayRange" class="btn small ghost">Today</button>
+        <button id="nextRange" class="btn small secondary">→</button>
+      </div>
+      <div id="calendarView" class="calendar-view"></div>
+    </section>
+
+    <section id="page-settings" class="page">
+      <div class="page-title-row"><div><h1>Settings</h1><p>These values are stored only in this browser.</p></div></div>
+      <div class="grid two">
+        <article class="panel">
+          <div class="panel-head"><h2>Operations</h2></div>
+          <div class="form-grid two">
+            <label>Operation type<select id="opType"><option value="part91">Part 91 / private</option><option value="part135">Part 135 / charter</option><option value="part121">Part 121 / airline</option></select></label>
+            <label>Average pax + bag weight (lb)<input id="paxWeight" type="number" min="100" max="350" /></label>
+            <label>Duty report before STD (min)<input id="dutyBefore" type="number" min="0" max="240" /></label>
+            <label>Duty release after STA (min)<input id="dutyAfter" type="number" min="0" max="180" /></label>
+          </div>
+          <div class="notice warning">Duty bars are planning aids for simulation, not regulatory legality determinations. Real-world Part 117/121/135 duty rules are more complex.</div>
+        </article>
+        <article class="panel">
+          <div class="panel-head"><h2>Data sources</h2></div>
+          <label>airports.dat URL<input id="airportsUrl" /></label>
+          <label>airlines.dat URL<input id="airlinesUrl" /></label>
+          <div class="button-row"><button id="reloadDbBtn" class="btn secondary">Reload databases</button></div>
+          <div class="notice">Airport and airline data are fetched from OpenFlights. A small built-in fallback keeps the app usable if the remote file is unavailable.</div>
+        </article>
+      </div>
+
+      <article class="panel spacer-top">
+        <div class="panel-head"><h2>Aircraft profiles & SimBrief fallbacks</h2><button id="addProfileBtn" class="btn small secondary">Add profile</button></div>
+        <p class="muted">If SimBrief does not recognize an imported ICAO type, choose a fallback profile here. LineForge never silently substitutes one.</p>
+        <div class="table-wrap"><table class="data-table"><thead><tr><th>ICAO type</th><th>SimBrief type</th><th>Max pax</th><th>Fallback if rejected</th><th></th></tr></thead><tbody id="profilesBody"></tbody></table></div>
+      </article>
+
+      <article class="panel spacer-top">
+        <div class="panel-head"><h2>Backup</h2></div>
+        <div class="button-row"><button id="exportBtn" class="btn secondary">Export LineForge JSON</button><label class="btn secondary file-label">Import JSON<input id="importFile" type="file" accept="application/json" hidden></label><button id="resetBtn" class="btn danger">Reset local data</button></div>
+      </article>
+    </section>
+  </main>
+
+  <dialog id="buildDialog" class="modal">
+    <form method="dialog" id="buildForm">
+      <div class="modal-head"><div><h2>Build flight</h2><div id="buildRoute" class="muted"></div></div><button value="cancel" class="icon-btn">✕</button></div>
+      <div class="form-grid three">
+        <label>Flight / callsign<input id="buildCallsign" /></label>
+        <label>Aircraft type<input id="buildType" /></label>
+        <label>Registration<input id="buildReg" /></label>
+        <label>Origin<input id="buildOrig" /></label>
+        <label>Destination<input id="buildDest" /></label>
+        <label>Departure Z<input id="buildStd" /></label>
+        <label>Passengers<input id="buildPax" type="number" min="0" /></label>
+        <label>Cargo / freight (lb)<input id="buildCargo" type="number" min="0" /></label>
+        <label>Fallback SimBrief type<select id="buildFallback"></select></label>
+      </div>
+      <div class="freight-box">
+        <label class="check"><input id="freightToggle" type="checkbox" /> Random freight (0–20% of passenger payload)</label>
+        <label>Freight description<input id="freightDesc" placeholder="e.g. mail, machine parts, catering supplies" /></label>
+        <label class="check"><input id="hazmatToggle" type="checkbox" /> Simulation HAZMAT / dangerous goods entry</label>
+        <div id="hazmatFields" class="form-grid three hidden">
+          <label>UN / ID number<input id="hazUn" placeholder="UN1845" /></label>
+          <label>Proper shipping name<input id="hazName" placeholder="Dry ice" /></label>
+          <label>Class / division<input id="hazClass" placeholder="9" /></label>
+          <label>Packing group<input id="hazPg" placeholder="N/A" /></label>
+          <label>Quantity<input id="hazQty" placeholder="10 kg" /></label>
+          <label>Loading location<input id="hazLoc" placeholder="AFT baggage" /></label>
+        </div>
+      </div>
+      <label>Dispatcher remarks<textarea id="buildRemarks" rows="5"></textarea></label>
+      <div class="notice warning">Simulation use only. HAZMAT text is a formatting aid and does not certify TSA/FAA/IATA/ICAO compliance or replace required dangerous-goods documentation.</div>
+      <div class="modal-actions"><button value="cancel" class="btn secondary">Cancel</button><button type="button" id="openSimbriefBtn" class="btn primary">Open prefilled SimBrief</button></div>
+    </form>
+  </dialog>
+
+  <dialog id="scheduleDialog" class="modal small-modal">
+    <form method="dialog">
+      <div class="modal-head"><h2>Schedule leg</h2><button value="cancel" class="icon-btn">✕</button></div>
+      <div id="scheduleFlightLabel" class="muted"></div>
+      <label>Calendar date<input id="scheduleDate" type="date" /></label>
+      <div class="modal-actions"><button value="cancel" class="btn secondary">Cancel</button><button type="button" id="saveScheduleBtn" class="btn primary">Save to trip board</button></div>
+    </form>
+  </dialog>
+
+  <script src="app.js"></script>
+</body>
+</html>
