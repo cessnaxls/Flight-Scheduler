@@ -21,6 +21,7 @@
 
   <nav class="tabs" aria-label="Primary">
     <button class="tab active" data-page="finder">Airport Desk</button>
+    <button class="tab" data-page="tailfinder">Tail Finder</button>
     <button class="tab" data-page="paste">Paste & Parse</button>
     <button class="tab" data-page="holding">Holding Area <span id="holdingBadge" class="badge">0</span></button>
     <button class="tab" data-page="calendar">Trip Board</button>
@@ -38,9 +39,15 @@
         <article class="panel">
           <div class="panel-head"><h2>Random airport generator</h2><span class="muted">OpenFlights airports.dat</span></div>
           <div class="form-grid three">
-            <label>Country<select id="countryFilter"><option value="">Any country</option></select></label>
+            <label>Country<select id="countryFilter"><option value="United States">United States</option></select></label>
             <label>Code requirement<select id="codeFilter"><option value="iata">IATA required</option><option value="icao">ICAO required</option><option value="both">IATA + ICAO</option><option value="any">Any airport</option></select></label>
             <label>Search<input id="airportSearch" placeholder="IND, KOPF, Opa Locka…" /></label>
+          </div>
+          <div class="airport-size-filter">
+            <span class="filter-label">Airport size</span>
+            <label class="check inline"><input id="sizeLarge" type="checkbox" checked> Large</label>
+            <label class="check inline"><input id="sizeMedium" type="checkbox" checked> Medium</label>
+            <label class="check inline"><input id="sizeSmall" type="checkbox" checked> Small</label>
           </div>
           <div class="button-row">
             <button id="randomAirportBtn" class="btn primary">Roll random airport</button>
@@ -67,6 +74,35 @@
       </article>
     </section>
 
+
+    <section id="page-tailfinder" class="page">
+      <div class="page-title-row">
+        <div><h1>Tail Finder</h1><p>Roll a live aircraft registration, then open its FR24 history page for copy/paste.</p></div>
+        <div id="tailStatus" class="status-pill">Ready</div>
+      </div>
+      <div class="grid two">
+        <article class="panel">
+          <div class="panel-head"><h2>Random live tail</h2><span class="muted">OpenSky / ADSB.lol</span></div>
+          <div class="form-grid two">
+            <label>Country code<select id="tailCountry"></select></label>
+            <label>Source<select id="tailSource"><option value="auto">Auto · OpenSky + ADSB.lol</option><option value="opensky">OpenSky</option><option value="adsblol">ADSB.lol</option></select></label>
+          </div>
+          <div class="button-row"><button id="randomTailBtn" class="btn primary">Roll random tail</button></div>
+          <div id="tailCard" class="airport-card empty">Roll a live tail to begin.</div>
+        </article>
+        <article class="panel">
+          <div class="panel-head"><h2>Workflow</h2></div>
+          <ol class="workflow">
+            <li>Pick a country code — <strong>US</strong> is the default.</li>
+            <li>Roll a registration from live surveillance data.</li>
+            <li>Open its FR24 aircraft-history page in a Safari tab.</li>
+            <li>Copy the FR24 page and paste it into <strong>Paste & Parse</strong>.</li>
+          </ol>
+          <div class="notice">OpenSky supplies country-aware live state vectors; ADSB.lol is used to resolve/enrich registration and aircraft details when available.</div>
+        </article>
+      </div>
+    </section>
+
     <section id="page-paste" class="page">
       <div class="page-title-row"><div><h1>Paste & Parse</h1><p>Paste either an FR24 airport arrivals/departures page or an aircraft-tail history page.</p></div></div>
       <div class="grid paste-layout">
@@ -88,7 +124,13 @@
 
       <article class="panel spacer-top">
         <div class="panel-head"><h2 id="resultsTitle">Parsed flights</h2><span id="resultsCount" class="badge">0</span></div>
-        <div class="table-wrap"><table class="data-table"><thead><tr><th>Flight</th><th>Date</th><th>Route</th><th>Aircraft</th><th>Tail</th><th>STD</th><th>STA</th><th>Status</th><th>Actions</th></tr></thead><tbody id="resultsBody"><tr><td colspan="9" class="empty-cell">Paste a page to begin.</td></tr></tbody></table></div>
+        <div id="resultFilters" class="form-grid four result-filters">
+          <label>Airline ICAO<select id="filterAirline"><option value="">All</option></select></label>
+          <label>Aircraft<select id="filterAircraft"><option value="">All</option></select></label>
+          <label>Departure<select id="filterDeparture"><option value="">All</option></select></label>
+          <label>Destination<select id="filterDestination"><option value="">All</option></select></label>
+        </div>
+        <div class="table-wrap"><table class="data-table"><thead><tr><th>Flight</th><th>Airline</th><th>Date</th><th>Route</th><th>Aircraft</th><th>Tail</th><th>STD</th><th>STA</th><th>Status</th><th>Actions</th></tr></thead><tbody id="resultsBody"><tr><td colspan="10" class="empty-cell">Paste a page to begin.</td></tr></tbody></table></div>
       </article>
     </section>
 
@@ -135,6 +177,7 @@
           <div class="panel-head"><h2>Data sources</h2></div>
           <label>airports.dat URL<input id="airportsUrl" /></label>
           <label>airlines.dat URL<input id="airlinesUrl" /></label>
+          <label>Airport-size metadata URL<input id="airportSizesUrl" /></label>
           <div class="button-row"><button id="reloadDbBtn" class="btn secondary">Reload databases</button></div>
           <div class="notice">Airport and airline data are fetched from OpenFlights. A small built-in fallback keeps the app usable if the remote file is unavailable.</div>
         </article>

@@ -1,62 +1,55 @@
-# LineForge Dispatch
+# LineForge Dispatch 2.0
 
-A lightweight, FLICA-inspired flight-simulation dispatch and pairing builder designed around a manual Flightradar24 copy/paste workflow.
+LineForge is a FLICA-style flight-simulation dispatch, pairing, and trip-building web app designed for iPad/Safari and Render.
 
-## What it does
+## What changed in 2.0
 
-- Loads OpenFlights `airports.dat` and `airlines.dat` directly in the browser.
-- Random airport generator with country/code filters.
-- Opens the selected airport's FR24 arrivals or departures page.
-- Parses copied FR24 airport schedules into a clean table.
-- Opens aircraft-tail FR24 pages and parses copied tail history.
-- Build button opens a prefilled SimBrief dispatch page.
-- Converts common 2-letter airline codes to ICAO 3-letter codes using `airlines.dat`.
-- Uses the aircraft-tail operator code when a tail page provides one (for example KPO).
-- Realism-oriented passenger randomization based on the origin airport's local departure hour.
-- Optional freight (0–20% of passenger payload) and simulation-only dangerous-goods remarks formatting.
-- Holding area, manual or random calendar assignment, 3/7/14/30-day trip views, and planned duty windows.
-- Light/dark themes, local browser persistence, JSON backup/restore.
+- Airport country defaults to **United States**.
+- Random airports can be filtered by **large / medium / small**. OpenFlights `airports.dat` remains the base airport database; OurAirports metadata supplies airport size because `airports.dat` itself does not contain a size class.
+- FR24 airport and aircraft-history pages open through LineForge's same-origin `/fr24` handoff page. The handoff opens a Safari tab first, then navigates to FR24, avoiding a direct iOS universal-link tap that commonly launches the native FR24 app. iOS can still override browser behavior based on system/user association settings.
+- New **Tail Finder** rolls live registrations by ISO country code (default **US**) using OpenSky state vectors and ADSB.lol enrichment. You can choose Auto, OpenSky, or ADSB.lol.
+- Parsed flight tables can be filtered by **3-letter airline ICAO**, **aircraft type**, **departure**, and **destination**.
+- The project is now a tiny Node/Express Render web service instead of a static site because live surveillance lookup and the Safari-safe FR24 handoff need server routes.
 
-## Run locally
+## Deploy on Render
 
-No dependencies are required. Serve the folder with any static HTTP server. Examples:
+1. Unzip the project and push the `lineforge` folder to a GitHub repository.
+2. In Render choose **New Blueprint** and select the repository.
+3. Render reads `render.yaml`, runs `npm install`, then starts `node server.js`.
+4. Open the Render URL in Safari on the iPad.
 
-```bash
-python3 -m http.server 8080
-```
+No database is required. User settings, holding legs, and the trip board remain in browser `localStorage`.
 
-Then open `http://localhost:8080`.
+### Optional OpenSky credentials
 
-> Opening `index.html` directly as a `file://` URL may prevent the browser from fetching the remote OpenFlights `.dat` files because of browser security rules. Use a local HTTP server or deploy to Render.
+Anonymous OpenSky requests can be rate-limited. For more reliable Tail Finder requests, create an OpenSky API client and add these Render environment variables:
 
-## Deploy to Render
+- `OPENSKY_CLIENT_ID`
+- `OPENSKY_CLIENT_SECRET`
 
-This repository already includes `render.yaml`.
-
-1. Push all files to a GitHub repository.
-2. In Render, create a new Blueprint and connect the repository.
-3. Render will create a static site named `lineforge-dispatch`.
-
-No environment variables or server process are required.
-
-## SimBrief behavior
-
-LineForge uses SimBrief's dispatch redirect query parameters (`orig`, `dest`, `type`, `callsign`, `reg`, `pax`, `cargo`, etc.). Imported ICAO aircraft types can be mapped to a SimBrief type in Settings. Each profile also has an explicit fallback value, but LineForge does **not** silently substitute a fallback; you can choose it in the Build dialog if SimBrief does not recognize the imported type.
+LineForge automatically uses OAuth client credentials when both are present.
 
 ## Data sources
 
-Default airport data:
-`https://raw.githubusercontent.com/jpatokal/openflights/master/data/airports.dat`
+- OpenFlights `airports.dat` — airport identity, coordinates, IATA/ICAO, timezone.
+- OurAirports `airports.csv` — airport size classification only.
+- OpenFlights `airlines.dat` — IATA-to-ICAO airline conversion.
+- OpenSky — live state vectors and country of origin.
+- ADSB.lol — registration/type/operator enrichment and optional random-tail source.
+- Flightradar24 — manually viewed/copy-pasted schedule and aircraft-history data. LineForge does not scrape FR24.
 
-Default airline data:
-`https://raw.githubusercontent.com/jpatokal/openflights/master/data/airlines.dat`
+## Core workflow
 
-The URLs are editable in Settings.
+1. Roll/search an airport.
+2. Open FR24 Arrivals or Departures in Safari.
+3. Copy visible FR24 page text.
+4. Paste and parse it in LineForge.
+5. Filter the table as needed.
+6. Build in SimBrief, add the leg to a trip, or open its tail history.
+7. Alternatively use Tail Finder to roll a live registration and jump directly to its FR24 history page.
 
-## Important limits
+## Notes
 
-- FR24 parsing is based on copied visible page text. If FR24 changes its page layout, the parser may need adjustment.
-- Times are preserved exactly as copied. The intended workflow is to configure FR24 to show UTC/Zulu before copying.
-- Duty windows are simulation planning aids only and are not legal Part 117/121/135 compliance calculations.
-- HAZMAT/DG remarks are simulation-only formatting aids. The app does not certify TSA, FAA, ICAO, or IATA compliance.
-- All app data is stored in `localStorage` on the current browser/device unless you export a JSON backup.
+- FR24 times are stored exactly as pasted; set FR24 to UTC/Zulu.
+- Duty/FDP bars are simulation planning aids, not regulatory legality determinations.
+- HAZMAT/DG remarks are simulation-only formatting aids.
