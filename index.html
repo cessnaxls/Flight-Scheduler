@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
   <meta name="theme-color" content="#e8edf3" />
   <title>LineForge Dispatch</title>
-  <link rel="stylesheet" href="styles.css" />
+  <link rel="stylesheet" href="styles.css?v=20260911-1755" />
 </head>
 <body>
   <header class="topbar">
@@ -30,8 +30,8 @@
   <main>
     <section id="page-finder" class="page active">
       <div class="page-title-row">
-        <div><h1>Flight Desk</h1><p>Generate an airport or live aircraft tail, open FR24, then import the copied FR24 page directly from your clipboard.</p></div>
-        <div id="dbStatus" class="status-pill">Loading airport database…</div>
+        <div><h1>Flight Desk</h1><p>Pick an airport or live tail, open its FR24 web page, copy the page, then import it here.</p></div>
+        <div class="desk-actions"><div id="dbStatus" class="status-pill">Loading airport database…</div><button class="btn primary import-clipboard-btn">Import FR24 clipboard</button></div>
       </div>
 
       <div class="grid two">
@@ -50,14 +50,14 @@
           </div>
           <div class="button-row">
             <button id="randomAirportBtn" class="btn primary">Roll random airport</button>
-            <button id="searchAirportBtn" class="btn secondary">Find airport</button><button class="btn secondary import-clipboard-btn">Import copied FR24 page</button>
+            <button id="searchAirportBtn" class="btn secondary">Find airport</button>
           </div>
           <div id="airportCard" class="airport-card empty">Choose or roll an airport.</div>
         </article>
 
         <article class="panel">
           <div class="panel-head"><h2>Random live tail</h2><span class="muted">OpenSky / ADSB.lol</span></div>
-          <div class="form-grid three">
+          <div class="tail-filter-grid">
             <label>Registration country<select id="tailCountry"></select></label>
             <label>Aircraft selector<select id="tailAircraft">
               <option value="">Any aircraft</option>
@@ -65,8 +65,8 @@
             </select></label>
             <label>Source<select id="tailSource"><option value="auto">Auto · ADSB.lol first</option><option value="adsblol">ADSB.lol</option><option value="opensky">OpenSky</option></select></label>
           </div>
-          <div id="tailCustomWrap" class="form-grid hidden"><label>Custom aircraft ICAO type<input id="tailCustomAircraft" maxlength="8" placeholder="e.g. H25B"></label></div>
-          <div class="button-row"><button id="randomTailBtn" class="btn primary">Roll random tail</button><button class="btn secondary import-clipboard-btn">Import copied FR24 page</button></div>
+          <div class="control-hint">Registration country filters by aircraft registration prefix (for example United States = N-number).</div><div id="tailCustomWrap" class="form-grid hidden"><label>Custom aircraft ICAO type<input id="tailCustomAircraft" maxlength="8" placeholder="e.g. H25B"></label></div>
+          <div class="button-row"><button id="randomTailBtn" class="btn primary">Roll random tail</button></div>
           <div id="tailStatus" class="status-pill">Ready</div>
           <div id="tailCard" class="airport-card empty">Roll a live tail to begin.</div>
         </article>
@@ -88,7 +88,7 @@
           <label>Departure<select id="filterDeparture"><option value="">All</option></select></label>
           <label>Destination<select id="filterDestination"><option value="">All</option></select></label>
         </div>
-        <div class="table-wrap"><table class="data-table"><thead><tr><th>Flight</th><th>Airline</th><th>Date</th><th>Route</th><th>Aircraft</th><th>Tail</th><th>STD</th><th>STA</th><th>Status</th><th>Actions</th></tr></thead><tbody id="resultsBody"><tr><td colspan="10" class="empty-cell">Copy an FR24 airport or tail page, then tap “Import copied FR24 page.”</td></tr></tbody></table></div>
+        <div class="table-wrap"><table class="data-table"><thead><tr><th>Flight</th><th>Airline</th><th>Date</th><th>Route</th><th>Aircraft</th><th>Tail</th><th>STD</th><th>STA</th><th>Status</th><th>Actions</th></tr></thead><tbody id="resultsBody"><tr><td colspan="10" class="empty-cell">Copy an FR24 airport or tail page, then use Import FR24 clipboard.</td></tr></tbody></table></div>
       </article>
     </section>
 
@@ -196,6 +196,6 @@
     </form>
   </dialog>
 
-  <script src="app.js"></script>
+  <script src="app.js?v=20260911-1755"></script>
 </body>
 </html>

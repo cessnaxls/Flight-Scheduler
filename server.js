@@ -5,7 +5,15 @@ const PORT = process.env.PORT || 3000;
 
 app.disable('x-powered-by');
 app.use(express.json({limit:'2mb'}));
-app.use(express.static(__dirname, { extensions: ['html'] }));
+app.use((req,res,next)=>{
+  // This app changes frequently during development. Prevent iPad Safari from mixing
+  // a newly deployed backend with an older cached app.js, which can break imports.
+  res.set('Cache-Control','no-store, no-cache, must-revalidate, proxy-revalidate');
+  res.set('Pragma','no-cache');
+  res.set('Expires','0');
+  next();
+});
+app.use(express.static(__dirname, { extensions: ['html'], etag:false, lastModified:false }));
 
 const cache = new Map();
 function cached(key, ttl, producer){

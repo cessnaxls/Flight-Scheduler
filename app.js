@@ -122,19 +122,22 @@ function chooseAirport(a){
   if(!a)return; currentAirport=a;
   state.recentAirports=[a.iata||a.icao,...state.recentAirports.filter(x=>x!==(a.iata||a.icao))].slice(0,10);saveState();renderRecent();
   $('airportCard').classList.remove('empty');
-  $('airportCard').innerHTML=`<h3>${esc(a.name)}</h3><div class="airport-codes">${esc(a.iata||'—')} / ${esc(a.icao||'—')}</div><div class="airport-meta">${esc(a.city)}, ${esc(a.country)} · ${esc((a.size||'unknown').toUpperCase())} · ${a.lat.toFixed(3)}, ${a.lon.toFixed(3)} · ${esc(a.tz)}</div><div class="button-row"><button class="btn primary" id="openDep">Open FR24 departures</button><button class="btn primary" id="openArr">Open FR24 arrivals</button><button class="btn secondary" id="goPaste">Import copied FR24 page</button></div>`;
-  $('openDep').onclick=()=>openFR24Airport(a,'departures'); $('openArr').onclick=()=>openFR24Airport(a,'arrivals'); $('goPaste').onclick=importClipboardBackend;
+  $('airportCard').innerHTML=`<h3>${esc(a.name)}</h3><div class="airport-codes">${esc(a.iata||'—')} / ${esc(a.icao||'—')}</div><div class="airport-meta">${esc(a.city)}, ${esc(a.country)} · ${esc((a.size||'unknown').toUpperCase())} · ${a.lat.toFixed(3)}, ${a.lon.toFixed(3)} · ${esc(a.tz)}</div><div class="button-row"><button class="btn primary" id="openDep">FR24 departures ↗</button><button class="btn primary" id="openArr">FR24 arrivals ↗</button></div>`;
+  $('openDep').onclick=()=>openFR24Airport(a,'departures'); $('openArr').onclick=()=>openFR24Airport(a,'arrivals');
 }
 function openFR24Path(path){
-  // Use FR24's browser-oriented free.flightradar24.com hostname rather than the
-  // www hostname that iPadOS commonly hands to the installed FR24 app as a Universal Link.
-  // Open it directly in a Safari tab; do not bounce through a LineForge helper route.
+  // Keep FR24 in Safari. A real anchor click preserves the user's gesture on iPadOS.
+  // Do not test window.open() when noopener is used: Safari may return null even when
+  // the tab opened successfully, which caused the false "Safari blocked" message.
   const url='https://free.flightradar24.com'+path;
-  const w=window.open(url,'_blank','noopener,noreferrer');
-  if(!w){
-    try{ navigator.clipboard.writeText(url); }catch(e){}
-    alert('Safari blocked the FR24 tab. The web URL was copied to your clipboard.');
-  }
+  const a=document.createElement('a');
+  a.href=url;
+  a.target='_blank';
+  a.rel='noopener noreferrer';
+  a.style.display='none';
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
 }
 function openFR24Airport(a,kind){ const code=(a.iata||a.icao).toLowerCase(); openFR24Path(`/data/airports/${encodeURIComponent(code)}/${kind}`); }
 function renderRecent(){ const box=$('recentAirports'); box.innerHTML=''; state.recentAirports.forEach(code=>{const a=airportByCode(code); if(!a)return; const b=document.createElement('button');b.className='chip';b.textContent=`${a.iata||a.icao} · ${a.city}`;b.onclick=()=>chooseAirport(a);box.appendChild(b);}); if(!box.children.length)box.innerHTML='<span class="muted">No recent airports.</span>'; }
@@ -146,7 +149,9 @@ function deriveAirlineCode(f){ if(f.operatorCode) return f.operatorCode; const v
 function dedupeFlights(arr){ const seen=new Set(); return arr.filter(f=>{const k=[f.flight,f.origin,f.dest,f.std,f.reg].join('|'); if(seen.has(k))return false;seen.add(k);return true;}); }
 
 function renderParsed(result){
-  parsedFlights=result.flights.map(f=>({...f,airlineCode:f.airlineCode||deriveAirlineCode(f)})); parsedMeta=result.meta;
+  if(!result || !Array.isArray(result.flights)) throw new Error('The parser returned an invalid response. Redeploy the current server and try again.');
+  parsedFlights=result.flights.map(f=>({...f,airlineCode:f.airlineCode||deriveAirlineCode(f)}));
+  parsedMeta=result.meta||{};
   $('resultsTitle').textContent=result.type==='tail'?'Tail flight history':'Airport schedule';
   populateResultFilters(); renderFilteredFlights();
 }
@@ -382,9 +387,8 @@ async function rollRandomTail(){
     $('tailStatus').textContent=j.source||'Found'; $('tailStatus').className='status-pill good';
     const hasReg=!!j.registration,rc=REGISTRATION_COUNTRIES.find(x=>x[0]===country);
     $('tailCard').classList.remove('empty');
-    $('tailCard').innerHTML=`<h3>${esc(j.registration||'Registration unavailable')}</h3><div class="airport-codes">${esc(j.aircraft||'TYPE —')} · ${esc(j.callsign||'NO CALLSIGN')}</div><div class="airport-meta">${esc(rc?`${rc[1]} registration (${rc[2]})`:country)} · HEX ${esc(String(j.hex||'').toUpperCase())} · ${esc(j.operator||'Operator unavailable')} · ${esc(j.source||'')}</div><div class="button-row"><button id="openRandomTail" class="btn primary" ${hasReg?'':'disabled'}>Open FR24 tail history</button><button id="tailToPaste" class="btn secondary">Import copied FR24 page</button></div>`;
+    $('tailCard').innerHTML=`<h3>${esc(j.registration||'Registration unavailable')}</h3><div class="airport-codes">${esc(j.aircraft||'TYPE —')} · ${esc(j.callsign||'NO CALLSIGN')}</div><div class="airport-meta">${esc(rc?`${rc[1]} registration (${rc[2]})`:country)} · HEX ${esc(String(j.hex||'').toUpperCase())} · ${esc(j.operator||'Operator unavailable')} · ${esc(j.source||'')}</div><div class="button-row"><button id="openRandomTail" class="btn primary" ${hasReg?'':'disabled'}>FR24 tail history ↗</button></div>`;
     if(hasReg)$('openRandomTail').onclick=()=>openFR24Path(`/data/aircraft/${encodeURIComponent(j.registration.toLowerCase())}`);
-    $('tailToPaste').onclick=importClipboardBackend;
   }catch(e){
     $('tailStatus').textContent='Lookup failed'; $('tailStatus').className='status-pill bad';
     $('tailCard').classList.remove('empty'); $('tailCard').innerHTML=`<div class="notice warning">${esc(e.message)}<br><br>Try again, select another aircraft type, or switch provider.</div>`;
@@ -393,28 +397,35 @@ async function rollRandomTail(){
 
 async function importClipboardBackend(){
   let text='';
+  const buttons=qsa('.import-clipboard-btn');
   try{
     text=await navigator.clipboard.readText();
   }catch(e){
-    alert('Safari did not allow clipboard access. Copy the FR24 page again, return to LineForge, and tap Import copied FR24 page.');
+    alert('Safari did not allow clipboard access. Copy the FR24 page again, return to LineForge, and tap Import FR24 clipboard.');
     return;
   }
   if(!String(text||'').trim()){
     alert('Your clipboard is empty. Copy the FR24 page text first.');
     return;
   }
-  switchPage('results');
+  buttons.forEach(b=>{b.disabled=true;b.dataset.oldText=b.textContent;b.textContent='Parsing…';});
   try{
     const r=await fetch('/api/parse-fr24',{
       method:'POST',
       headers:{'Content-Type':'application/json'},
       body:JSON.stringify({text})
     });
-    const j=await r.json().catch(()=>({}));
+    const raw=await r.text();
+    let j={};
+    try{ j=JSON.parse(raw); }catch{ throw new Error(`Server returned a non-JSON response (${r.status}). Make sure Render deployed this Node Web Service version.`); }
     if(!r.ok) throw new Error(j.error||`Parse failed (${r.status})`);
+    if(!j || !Array.isArray(j.flights)) throw new Error('Parser response did not contain a flights array. Redeploy the current server version.');
     renderParsed(j);
+    switchPage('results');
   }catch(e){
     alert(`Could not parse the copied FR24 page: ${e.message}`);
+  }finally{
+    buttons.forEach(b=>{b.disabled=false;b.textContent=b.dataset.oldText||'Import FR24 clipboard';});
   }
 }
 

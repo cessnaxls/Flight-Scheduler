@@ -31,3 +31,18 @@ main{padding:20px;max-width:1600px;margin:0 auto}.page{display:none}.page.active
 .btn:disabled,.link-btn:disabled{opacity:.45;cursor:not-allowed}
 @media(max-width:900px){.form-grid.four{grid-template-columns:repeat(2,minmax(0,1fr))}}
 @media(max-width:620px){.form-grid.four{grid-template-columns:1fr}.airport-size-filter{gap:10px}}
+
+/* Flight Desk polish */
+.desk-actions{display:flex;align-items:center;justify-content:flex-end;gap:10px;flex-wrap:wrap}
+.tail-filter-grid{display:grid;grid-template-columns:minmax(190px,.9fr) minmax(230px,1.25fr) minmax(190px,.9fr);gap:10px;margin:12px}
+.control-hint{margin:-2px 12px 8px;color:var(--muted);font-size:11px;line-height:1.4}
+#page-finder .grid.two{align-items:start}
+#page-finder .panel{overflow:hidden}
+#page-finder .airport-card{border-style:solid;background:color-mix(in srgb,var(--panel2) 46%,var(--panel));min-height:132px}
+#page-finder .airport-card.empty{border-style:dashed;background:var(--panel)}
+#page-finder .button-row .btn{min-height:38px}
+#page-finder .panel-head{min-height:46px}
+.import-clipboard-btn{white-space:nowrap;box-shadow:0 1px 1px rgba(0,0,0,.08)}
+#tailStatus{margin:0 12px 10px}
+@media(max-width:1050px){.tail-filter-grid{grid-template-columns:1fr 1fr}.tail-filter-grid label:last-child{grid-column:1/-1}.desk-actions{justify-content:flex-start}}
+@media(max-width:700px){.tail-filter-grid{grid-template-columns:1fr}.tail-filter-grid label:last-child{grid-column:auto}.desk-actions{width:100%}.desk-actions .import-clipboard-btn{flex:1}.page-title-row{gap:10px}}
