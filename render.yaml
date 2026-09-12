@@ -2,6 +2,7 @@ services:
   - type: web
     name: lineforge-dispatch
     runtime: node
-    buildCommand: echo "LineForge has no npm dependencies"
+    buildCommand: echo "No build step"
     startCommand: node server.js
     healthCheckPath: /health
+    autoDeploy: true

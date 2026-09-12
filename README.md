@@ -1,9 +1,11 @@
-# LineForge Dispatch v5.0
+# LineForge Dispatch v6.0
 
-Self-contained deployment build. The server reads `public/index.html`, `public/styles.css`, and `public/app.js` at startup and injects CSS and JavaScript directly into the HTML response. This removes separate browser asset-loading/caching as a possible blank-screen cause.
+Fresh rebuild. No frontend build system and no npm dependencies.
 
-FR24 clipboard parsing occurs locally in Safari; the backend is used for live-tail lookup only.
+Render:
+- Runtime: Node
+- Build command: `echo "No build step"`
+- Start command: `node server.js`
+- Health: `/health`
 
-Diagnostics:
-- `/health`
-- `/diagnostic`
+The FR24 clipboard parser runs locally in Safari. Live-tail lookup uses a small server endpoint because provider CORS varies.
