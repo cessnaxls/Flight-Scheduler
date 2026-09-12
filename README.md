@@ -74,3 +74,7 @@ The FR24 clipboard parser remains server-side at `POST /api/parse-fr24`.
 
 ## v2.2.1 API routing hardening
 The clipboard parser is available at `POST /parse-fr24.json` and the deploy health endpoint is `GET /health.json`. These routes are registered before static assets so they cannot intentionally fall through to the SPA shell. The FR24 2026 vertical airport-board parser accepts both full aircraft names and compact FR24 equipment codes, and tolerates rows where aircraft information is omitted.
+
+
+## v2.2.2 parser compatibility fix
+The frontend no longer refuses to import solely because `/health.json` is missing or reports an older backend version. It now tries `/parse-fr24.json`, `/api/parse-fr24`, and `/lineforge-api/parse-fr24` in order and uses the first valid JSON response containing `flights[]`. This keeps parsing on the Node backend while tolerating Render/iPad cache or deployment skew.

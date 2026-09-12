@@ -410,23 +410,32 @@ async function importClipboardBackend(){
   }
   buttons.forEach(b=>{b.disabled=true;b.dataset.oldText=b.textContent;b.textContent='Parsing…';});
   try{
-    // Verify this page is paired with the matching Node backend before sending the clipboard.
-    const health=await fetch('/health.json?v=2.2.1',{cache:'no-store',headers:{Accept:'application/json'}});
-    const healthType=(health.headers.get('content-type')||'').toLowerCase();
-    if(!health.ok || !healthType.includes('application/json')) throw new Error('The deployed frontend is newer than the Node backend. Render has not activated server.js v2.2.0 yet.');
-    const hj=await health.json();
-    if(hj.version!=='2.2.1') throw new Error(`Backend version ${hj.version||'unknown'} is still live; this UI requires 2.2.1.`);
-    const r=await fetch('/parse-fr24.json?v=2.2.1',{
-      method:'POST',
-      headers:{'Content-Type':'application/json','Accept':'application/json'},
-      cache:'no-store',
-      body:JSON.stringify({text})
-    });
-    const raw=await r.text();
-    let j={};
-    try{ j=JSON.parse(raw); }catch{ const sample=raw.replace(/\s+/g,' ').slice(0,80); throw new Error(`Backend route returned HTML/non-JSON (${r.status}). Response starts: ${sample||'empty response'}`); }
-    if(!r.ok) throw new Error(j.error||`Parse failed (${r.status})`);
-    if(!j || !Array.isArray(j.flights)) throw new Error('Parser response did not contain a flights array. Redeploy the current server version.');
+    // Do not hard-gate on a health/version endpoint. Older LineForge Node builds
+    // already exposed a compatible parser at /api/parse-fr24, and Render/iPad
+    // caching can temporarily pair a newer app.js with that older backend.
+    // Try every compatible backend route and accept the first valid JSON result.
+    const endpoints=['/parse-fr24.json','/api/parse-fr24','/lineforge-api/parse-fr24'];
+    const failures=[];
+    let j=null;
+    for(const endpoint of endpoints){
+      try{
+        const r=await fetch(`${endpoint}?cb=${Date.now()}`,{
+          method:'POST',
+          headers:{'Content-Type':'application/json','Accept':'application/json'},
+          cache:'no-store',
+          body:JSON.stringify({text})
+        });
+        const raw=await r.text();
+        let candidate=null;
+        try{ candidate=JSON.parse(raw); }
+        catch{ failures.push(`${endpoint}: ${r.status} non-JSON`); continue; }
+        if(!r.ok){ failures.push(`${endpoint}: ${r.status} ${candidate?.error||'parse failed'}`); continue; }
+        if(!candidate || !Array.isArray(candidate.flights)){ failures.push(`${endpoint}: JSON without flights[]`); continue; }
+        j=candidate;
+        break;
+      }catch(err){ failures.push(`${endpoint}: ${err.message}`); }
+    }
+    if(!j) throw new Error(`No compatible parser endpoint responded. ${failures.join(' · ')}`);
     renderParsed(j);
     switchPage('results');
   }catch(e){
