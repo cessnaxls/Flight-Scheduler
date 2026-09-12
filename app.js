@@ -410,14 +410,15 @@ async function importClipboardBackend(){
   }
   buttons.forEach(b=>{b.disabled=true;b.dataset.oldText=b.textContent;b.textContent='Parsing…';});
   try{
-    const r=await fetch('/api/parse-fr24',{
+    const r=await fetch('/api/parse-fr24?v=2.1.0',{
       method:'POST',
-      headers:{'Content-Type':'application/json'},
+      headers:{'Content-Type':'application/json','Accept':'application/json'},
+      cache:'no-store',
       body:JSON.stringify({text})
     });
     const raw=await r.text();
     let j={};
-    try{ j=JSON.parse(raw); }catch{ throw new Error(`Server returned a non-JSON response (${r.status}). Make sure Render deployed this Node Web Service version.`); }
+    try{ j=JSON.parse(raw); }catch{ const sample=raw.replace(/\s+/g,' ').slice(0,80); throw new Error(`Backend route returned HTML/non-JSON (${r.status}). Response starts: ${sample||'empty response'}`); }
     if(!r.ok) throw new Error(j.error||`Parse failed (${r.status})`);
     if(!j || !Array.isArray(j.flights)) throw new Error('Parser response did not contain a flights array. Redeploy the current server version.');
     renderParsed(j);

@@ -57,3 +57,16 @@ The backend parser supports Flightradar24's newer airport-board copy format wher
 - Static assets are served with `no-store` and versioned URLs so Safari does not combine an older cached frontend with a newer backend.
 - The clipboard importer validates the server payload before rendering and remains on Flight Desk if parsing fails.
 - Tail Finder controls have been reflowed for iPad and explicitly describe registration-country filtering.
+
+
+## 2.1.0 API routing fix
+
+This build mounts every `/api/*` route before the static app fallback. An API request can no longer be answered with `index.html`.
+
+After Render deploys, open `/api/health` in Safari. A healthy deployment returns JSON similar to:
+
+```json
+{"ok":true,"service":"lineforge-dispatch","version":"2.1.0"}
+```
+
+The FR24 clipboard parser remains server-side at `POST /api/parse-fr24`.

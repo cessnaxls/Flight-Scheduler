@@ -13,7 +13,6 @@ app.use((req,res,next)=>{
   res.set('Expires','0');
   next();
 });
-app.use(express.static(__dirname, { extensions: ['html'], etag:false, lastModified:false }));
 
 const cache = new Map();
 function cached(key, ttl, producer){
@@ -298,15 +297,27 @@ async function parseFr24(text){
   return out;
 }
 
-app.post('/api/parse-fr24',async (req,res)=>{
-  try{
-    const out=await parseFr24(req.body?.text);
-    if(!out.flights.length) return res.status(422).json({error:'No flights were recognized in the copied FR24 text.'});
-    res.json(out);
-  }catch(e){res.status(400).json({error:e.message||'Unable to parse FR24 text.'});}
+const api = express.Router();
+
+api.get('/health',(req,res)=>{
+  res.json({ok:true,service:'lineforge-dispatch',version:'2.1.0',time:new Date().toISOString()});
 });
 
-app.get('/api/random-tail', async (req,res)=>{
+api.post('/parse-fr24',async (req,res)=>{
+  try{
+    const text=req.body && typeof req.body.text==='string' ? req.body.text : '';
+    const out=await parseFr24(text);
+    if(!Array.isArray(out.flights) || !out.flights.length){
+      return res.status(422).json({ok:false,error:'No flights were recognized in the copied FR24 text.'});
+    }
+    return res.status(200).json({...out,ok:true});
+  }catch(e){
+    console.error('FR24 parse error:',e);
+    return res.status(400).json({ok:false,error:e && e.message ? e.message : 'Unable to parse FR24 text.'});
+  }
+});
+
+api.get('/random-tail', async (req,res)=>{
   const country=String(req.query.country||'US').toUpperCase();
   const source=String(req.query.source||'auto').toLowerCase();
   const type=String(req.query.type||'').trim().toUpperCase().replace(/[^A-Z0-9]/g,'').slice(0,8);
@@ -318,9 +329,17 @@ app.get('/api/random-tail', async (req,res)=>{
       try{ out=await randomFromAdsb(country,type); }
       catch(first){ try{ out=await randomFromOpenSky(country,type); } catch(second){ throw new Error(`${first.message} OpenSky fallback: ${second.message}`); } }
     }
-    res.json(out);
-  }catch(e){ res.status(502).json({error:`Live tail lookup failed: ${e.message}`}); }
+    return res.json({ok:true,...out});
+  }catch(e){
+    console.error('Tail lookup error:',e);
+    return res.status(502).json({ok:false,error:`Live tail lookup failed: ${e.message}`});
+  }
 });
+
+// API routes are mounted BEFORE any static/fallback handling. Nothing under /api
+// is ever allowed to fall through to index.html.
+app.use('/api',api);
+app.use('/api',(req,res)=>res.status(404).json({ok:false,error:'Unknown LineForge API route.'}));
 
 // Safari-safe FR24 handoff. We deliberately DO NOT navigate to FR24 because iPadOS
 // Universal Links can hand that navigation to the installed FR24 app. Instead we copy
@@ -334,5 +353,14 @@ app.get('/fr24', (req,res)=>{
   res.type('html').send(`<!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1"><title>FR24 Safari</title><style>body{font-family:-apple-system,BlinkMacSystemFont,system-ui;margin:0;background:#eef2f6;color:#17212b}.box{max-width:720px;margin:10vh auto;background:#fff;border:1px solid #b9c3cd;padding:24px}.url{font-family:ui-monospace,monospace;word-break:break-all;background:#f4f6f8;padding:12px;border:1px solid #ccd4dc}.ok{font-weight:700;color:#176c48}button{font:inherit;padding:10px 14px;border:0;background:#185f9c;color:white;font-weight:700}ol{line-height:1.6}</style></head><body><div class="box"><h1>Open FR24 in Safari</h1><p class="ok">FR24 URL copied.</p><p>iPadOS Universal Links can force ordinary FR24 links into the installed FR24 app. A website cannot disable that system association, so LineForge does not directly open the FR24 link.</p><ol><li>Tap Safari's address bar.</li><li>Tap <strong>Paste and Go</strong>.</li></ol><div class="url" id="url"></div><p><button id="copy">Copy URL again</button></p></div><script>const u=${targetJs};document.getElementById('url').textContent=u;async function cp(){try{await navigator.clipboard.writeText(u)}catch(e){const t=document.createElement('textarea');t.value=u;document.body.appendChild(t);t.select();document.execCommand('copy');t.remove()}};cp();document.getElementById('copy').onclick=cp;</script></body></html>`);
 });
 
+// Static app is served only after API routing has had the first chance to respond.
+app.use(express.static(__dirname, { extensions: ['html'], etag:false, lastModified:false }));
 app.get('*',(req,res)=>res.sendFile(path.join(__dirname,'index.html')));
+
+// Return JSON for malformed JSON request bodies too.
+app.use((err,req,res,next)=>{
+  if(req.path.startsWith('/api/')) return res.status(400).json({ok:false,error:'Invalid JSON request body.'});
+  next(err);
+});
+
 app.listen(PORT,()=>console.log(`LineForge listening on ${PORT}`));
