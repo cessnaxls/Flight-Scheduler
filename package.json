@@ -1,16 +1,8 @@
 {
-  "name": "lineforge-dispatch",
-  "version": "3.0.0",
-  "private": true,
-  "description": "FLICA-style flight-sim dispatch and trip builder",
-  "main": "server.js",
-  "scripts": {
-    "start": "node server.js"
-  },
-  "engines": {
-    "node": ">=18"
-  },
-  "dependencies": {
-    "express": "^4.21.2"
-  }
+  "name":"lineforge-dispatch",
+  "version":"4.1.0",
+  "private":true,
+  "description":"LineForge Dispatch — iPad-first flight dispatch and pairing builder",
+  "scripts":{"start":"node server.js"},
+  "engines":{"node":">=18"}
 }
