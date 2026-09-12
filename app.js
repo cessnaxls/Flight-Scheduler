@@ -410,7 +410,13 @@ async function importClipboardBackend(){
   }
   buttons.forEach(b=>{b.disabled=true;b.dataset.oldText=b.textContent;b.textContent='Parsing…';});
   try{
-    const r=await fetch('/api/parse-fr24?v=2.1.0',{
+    // Verify this page is paired with the matching Node backend before sending the clipboard.
+    const health=await fetch('/health.json?v=2.2.1',{cache:'no-store',headers:{Accept:'application/json'}});
+    const healthType=(health.headers.get('content-type')||'').toLowerCase();
+    if(!health.ok || !healthType.includes('application/json')) throw new Error('The deployed frontend is newer than the Node backend. Render has not activated server.js v2.2.0 yet.');
+    const hj=await health.json();
+    if(hj.version!=='2.2.1') throw new Error(`Backend version ${hj.version||'unknown'} is still live; this UI requires 2.2.1.`);
+    const r=await fetch('/parse-fr24.json?v=2.2.1',{
       method:'POST',
       headers:{'Content-Type':'application/json','Accept':'application/json'},
       cache:'no-store',

@@ -70,3 +70,7 @@ After Render deploys, open `/api/health` in Safari. A healthy deployment returns
 ```
 
 The FR24 clipboard parser remains server-side at `POST /api/parse-fr24`.
+
+
+## v2.2.1 API routing hardening
+The clipboard parser is available at `POST /parse-fr24.json` and the deploy health endpoint is `GET /health.json`. These routes are registered before static assets so they cannot intentionally fall through to the SPA shell. The FR24 2026 vertical airport-board parser accepts both full aircraft names and compact FR24 equipment codes, and tolerates rows where aircraft information is omitted.

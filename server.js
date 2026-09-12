@@ -238,8 +238,15 @@ function parseNewAirportBoard(text){
     const di=block.findIndex(x=>x.toLowerCase()===dirLabel.toLowerCase()); if(di<0){i=nextStart-1;continue;}
     const otherName=block[di+1]||'', otherIata=(block[di+2]||'').toUpperCase(), otherIcao=(block[di+3]||'').toUpperCase();
     if(!/^[A-Z0-9]{3}$/.test(otherIata)||!/^[A-Z0-9]{4}$/.test(otherIcao)){i=nextStart-1;continue;}
-    const airline=block[di+4]||''; const aircraftRaw=block[di+5]||'';
-    let reg=''; const maybeReg=block[di+6]||''; if(looksLikeRegistration(maybeReg))reg=maybeReg;
+    const airline=block[di+4]||'';
+    let aircraftRaw=''; let reg='';
+    // FR24 sometimes omits the aircraft field entirely. Only accept values before
+    // Gate/Runway/status markers; never mistake "Gate: ..." for an equipment code.
+    const candidateAircraft=block[di+5]||'';
+    if(candidateAircraft && !/^(Gate:|Runway:|Estimated\b|Scheduled\b|Departed\b|Landed\b|Canceled\b|Cancelled\b|Delayed\b|History\b)/i.test(candidateAircraft)){
+      aircraftRaw=candidateAircraft;
+      const maybeReg=block[di+6]||''; if(looksLikeRegistration(maybeReg))reg=maybeReg;
+    }
     const status=(block.find(x=>/^(Estimated|Scheduled|Departed|Landed|Delayed|Canceled|Cancelled|Diverted)\b/i.test(x))||'').replace(/\s+/g,' ');
     const origin=section==='departures'?airportIata:otherIata, dest=section==='departures'?otherIata:airportIata;
     const originIcao=section==='departures'?airportIcao:otherIcao, destIcao=section==='departures'?otherIcao:airportIcao;
@@ -297,25 +304,31 @@ async function parseFr24(text){
   return out;
 }
 
-const api = express.Router();
-
-api.get('/health',(req,res)=>{
-  res.json({ok:true,service:'lineforge-dispatch',version:'2.1.0',time:new Date().toISOString()});
-});
-
-api.post('/parse-fr24',async (req,res)=>{
+// Parser handler is deliberately exposed at two explicit POST paths.
+// These are registered directly on the Express app before static files, so Render or
+// Express can never satisfy a parse request with index.html.
+async function handleParseFr24(req,res){
+  res.set('X-LineForge-Backend','2.2.1');
   try{
     const text=req.body && typeof req.body.text==='string' ? req.body.text : '';
     const out=await parseFr24(text);
     if(!Array.isArray(out.flights) || !out.flights.length){
-      return res.status(422).json({ok:false,error:'No flights were recognized in the copied FR24 text.'});
+      return res.status(422).type('application/json').send(JSON.stringify({ok:false,error:'No flights were recognized in the copied FR24 text.',version:'2.2.1'}));
     }
-    return res.status(200).json({...out,ok:true});
+    return res.status(200).type('application/json').send(JSON.stringify({...out,ok:true,version:'2.2.1'}));
   }catch(e){
     console.error('FR24 parse error:',e);
-    return res.status(400).json({ok:false,error:e && e.message ? e.message : 'Unable to parse FR24 text.'});
+    return res.status(400).type('application/json').send(JSON.stringify({ok:false,error:e && e.message ? e.message : 'Unable to parse FR24 text.',version:'2.2.1'}));
   }
-});
+}
+
+app.get('/health.json',(req,res)=>res.status(200).type('application/json').send(JSON.stringify({ok:true,service:'lineforge-dispatch',version:'2.2.1',time:new Date().toISOString()})));
+app.get('/lineforge-api/health',(req,res)=>res.status(200).type('application/json').send(JSON.stringify({ok:true,service:'lineforge-dispatch',version:'2.2.1',time:new Date().toISOString()})));
+app.post('/api/parse-fr24',handleParseFr24);
+app.post('/lineforge-api/parse-fr24',handleParseFr24);
+app.post('/parse-fr24.json',handleParseFr24);
+
+const api = express.Router();
 
 api.get('/random-tail', async (req,res)=>{
   const country=String(req.query.country||'US').toUpperCase();
