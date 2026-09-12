@@ -78,3 +78,8 @@ The clipboard parser is available at `POST /parse-fr24.json` and the deploy heal
 
 ## v2.2.2 parser compatibility fix
 The frontend no longer refuses to import solely because `/health.json` is missing or reports an older backend version. It now tries `/parse-fr24.json`, `/api/parse-fr24`, and `/lineforge-api/parse-fr24` in order and uses the first valid JSON response containing `flights[]`. This keeps parsing on the Node backend while tolerating Render/iPad cache or deployment skew.
+
+## v3.0 monolithic deployment
+This release deliberately serves the browser UI and FR24 parser from the same `server.js` process. This prevents a new frontend from being paired with an old backend.
+
+After deploy, `/health` must return `{"ok":true,...,"build":"3.0.0-monolith"}`. The clipboard import posts to `/parse` on that same process.
