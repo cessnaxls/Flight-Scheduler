@@ -2,7 +2,6 @@ services:
   - type: web
     name: lineforge-dispatch
     runtime: node
-    plan: free
-    buildCommand: echo "No dependencies to install"
+    buildCommand: echo "LineForge has no npm dependencies"
     startCommand: node server.js
     healthCheckPath: /health

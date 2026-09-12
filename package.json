@@ -1,8 +1,7 @@
 {
-  "name":"lineforge-dispatch",
-  "version":"4.1.0",
-  "private":true,
-  "description":"LineForge Dispatch — iPad-first flight dispatch and pairing builder",
-  "scripts":{"start":"node server.js"},
-  "engines":{"node":">=18"}
+  "name": "lineforge-dispatch",
+  "version": "5.0.0",
+  "private": true,
+  "scripts": {"start": "node server.js"},
+  "engines": {"node": ">=20"}
 }
