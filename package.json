@@ -1,16 +1,10 @@
 {
   "name": "lineforge-dispatch",
-  "version": "7.0.0",
+  "version": "2.0.0",
   "private": true,
   "description": "FLICA-style flight-sim dispatch and trip builder",
   "main": "server.js",
-  "scripts": {
-    "start": "node server.js"
-  },
-  "engines": {
-    "node": ">=18"
-  },
-  "dependencies": {
-    "express": "^4.21.2"
-  }
+  "scripts": {"start": "node server.js"},
+  "engines": {"node": ">=18"},
+  "dependencies": {"express": "^4.21.2"}
 }
