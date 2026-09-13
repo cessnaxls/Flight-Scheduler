@@ -48,3 +48,7 @@ Copied FR24 page text is posted to the LineForge server only for the parse reque
 
 ## FR24 September 2026 board format
 The backend parser supports the current FR24 airport-board copy format where each flight is expanded into separate lines (`TIME`, flight number, `To:`/`From:`, airport codes, airline, aircraft, registration, gate/runway, and status). For departure boards that no longer expose an arrival time, LineForge estimates block duration server-side from airport coordinates and aircraft category so Trip Board blocks remain schedulable. The published FR24 board time remains the departure time; estimated duration/arrival are planning aids only.
+
+## Static-site compatibility
+
+LineForge now detects when `/api/parse-fr24` or `/api/random-tail` is unavailable (for example, when deployed on Render as a Static Site). It falls back to the same FR24 parser and direct live-tail providers in the browser instead of crashing. If deployed as a Node Web Service, the backend endpoints are still used first.

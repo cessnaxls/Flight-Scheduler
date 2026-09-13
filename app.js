@@ -171,7 +171,8 @@ function deriveAirlineCode(f){ if(f.operatorCode) return f.operatorCode; const v
 function dedupeFlights(arr){ const seen=new Set(); return arr.filter(f=>{const k=[f.flight,f.origin,f.dest,f.std,f.reg].join('|'); if(seen.has(k))return false;seen.add(k);return true;}); }
 
 function renderParsed(result){
-  parsedFlights=result.flights.map(f=>({...f,airlineCode:f.airlineCode||deriveAirlineCode(f)})); parsedMeta=result.meta;
+  if(!result || !Array.isArray(result.flights)) throw new Error('Parser returned an invalid response.');
+  parsedFlights=result.flights.map(f=>({...f,airlineCode:f.airlineCode||deriveAirlineCode(f)})); parsedMeta=result.meta||{};
   $('resultsTitle').textContent=result.type==='tail'?'Tail flight history':'Airport schedule';
   populateResultFilters(); renderFilteredFlights();
 }
@@ -401,9 +402,18 @@ async function rollRandomTail(){
   state.tailCountry=country;state.tailSource=source;state.tailAircraft=$('tailAircraft').value||'';saveState();
   $('tailStatus').textContent='Searching live aircraft…'; $('tailStatus').className='status-pill'; $('randomTailBtn').disabled=true;
   try{
-    const qs=new URLSearchParams({country,source}); if(aircraft)qs.set('type',aircraft);
-    const r=await fetch(`/api/random-tail?${qs.toString()}`); const j=await r.json().catch(()=>({}));
-    if(!r.ok) throw new Error(j.error||`Lookup failed (${r.status})`);
+    let j=null;
+    try{
+      const qs=new URLSearchParams({country,source}); if(aircraft)qs.set('type',aircraft);
+      const r=await fetch(`/api/random-tail?${qs.toString()}`,{headers:{Accept:'application/json'}});
+      const ct=(r.headers.get('content-type')||'').toLowerCase();
+      if(r.ok&&ct.includes('application/json')){const x=await r.json();if(x&&('registration' in x||x.error)){if(x.error)throw new Error(x.error);j=x;}}
+    }catch(e){console.warn('Backend tail lookup unavailable; using direct provider fallback.',e);}
+    if(!j){
+      if(source==='adsblol') j=await directAdsbTail(country,aircraft);
+      else if(source==='opensky') j=await directOpenSkyTail(country,aircraft);
+      else {try{j=await directAdsbTail(country,aircraft);}catch(first){try{j=await directOpenSkyTail(country,aircraft);}catch(second){throw new Error(`${first.message} OpenSky fallback: ${second.message}`);}}}
+    }
     $('tailStatus').textContent=j.source||'Found'; $('tailStatus').className='status-pill good';
     const hasReg=!!j.registration,rc=REGISTRATION_COUNTRIES.find(x=>x[0]===country);
     $('tailCard').classList.remove('empty');
@@ -415,31 +425,77 @@ async function rollRandomTail(){
   }finally{$('randomTailBtn').disabled=false;}
 }
 
+const CLIENT_AIRCRAFT_NAME_TO_ICAO=[
+  [/^Boeing 737-700$/i,'B737'],[/^Boeing 737-800$/i,'B738'],[/^Boeing 737-900$/i,'B739'],[/^Boeing 737 MAX 8$/i,'B38M'],[/^Boeing 737 MAX 9$/i,'B39M'],
+  [/^Boeing 757-200$/i,'B752'],[/^Boeing 757-300$/i,'B753'],[/^Boeing 767-300$/i,'B763'],[/^Boeing 747-8$/i,'B748'],[/^Boeing 777-200$/i,'B772'],[/^Boeing 777-200LR$/i,'B77L'],[/^Boeing 777-300ER$/i,'B77W'],[/^Boeing 787-8$/i,'B788'],[/^Boeing 787-9$/i,'B789'],[/^Boeing 787-10$/i,'B78X'],
+  [/^Airbus A220-100$/i,'BCS1'],[/^Airbus A220-300$/i,'BCS3'],[/^Airbus A319$/i,'A319'],[/^Airbus A320$/i,'A320'],[/^Airbus A320neo$/i,'A20N'],[/^Airbus A321$/i,'A321'],[/^Airbus A321neo$/i,'A21N'],
+  [/^Airbus A330-900(?: Neo)?$/i,'A339'],[/^Airbus A350-900$/i,'A359'],[/^Airbus A350-1000$/i,'A35K'],[/^Airbus A380-800$/i,'A388'],
+  [/^Embraer E175(?: \(long\))?$/i,'E75L'],[/^Embraer E195-E2$/i,'E295'],[/^Mitsubishi CRJ-700$/i,'CRJ7'],
+  [/^788$/i,'B788'],[/^E55P$/i,'E55P'],[/^GLF6$/i,'GLF6'],[/^C700$/i,'C700'],[/^C68A$/i,'C68A'],[/^CL30$/i,'CL30'],[/^ER3$/i,'E135'],[/^ER4$/i,'E145'],[/^FA50$/i,'FA50'],[/^CNC$/i,'CNC']
+];
+function clientNormalizeAircraft(raw=''){
+  const v=String(raw||'').trim(); if(!v)return '';
+  if(/^[A-Z0-9]{3,5}$/.test(v)) return v.toUpperCase();
+  for(const [rx,code] of CLIENT_AIRCRAFT_NAME_TO_ICAO){if(rx.test(v))return code;}
+  return v.toUpperCase().replace(/[^A-Z0-9]/g,'').slice(0,5);
+}
+function clientLooksLikeRegistration(v=''){
+  const s=String(v).trim().toUpperCase();
+  return /^(N\d{1,5}[A-Z]{0,2}|[A-Z0-9]{1,2}-[A-Z0-9]{3,6}|C-[FGI][A-Z]{3}|VH-[A-Z]{3}|JA\d{4}|HL\d{4}|9V-[A-Z]{3})$/.test(s);
+}
+function clientGcNm(a,b){const R=3440.065,toRad=x=>x*Math.PI/180,p1=toRad(a.lat),p2=toRad(b.lat),dp=toRad(b.lat-a.lat),dl=toRad(b.lon-a.lon),h=Math.sin(dp/2)**2+Math.cos(p1)*Math.cos(p2)*Math.sin(dl/2)**2;return 2*R*Math.asin(Math.min(1,Math.sqrt(h)));}
+function clientCruiseKts(type=''){const t=String(type).toUpperCase();if(/^(CNC|PA31|C172|SR22)/.test(t))return 180;if(/^(B350|PC12|DH8|AT7|AT4)/.test(t))return 285;if(/^(E55P|C25|C68|C700|CL|GLF|H25|FA50|E545)/.test(t))return 430;if(/^(B7|B3|B2|A3|A2|BCS|E7|E1|CRJ|E29)/.test(t))return 455;return 430;}
+function clientEstimateMinutes(origin,dest,type){const a=airportByCode(origin),b=airportByCode(dest);if(!a||!b||!Number.isFinite(a.lat)||!Number.isFinite(b.lat))return 120;const d=clientGcNm(a,b),mins=Math.round((d/clientCruiseKts(type))*60+22);return Math.max(30,Math.min(900,mins));}
+function clientAddMinutes(hhmm,mins){const m=String(hhmm).match(/^(\d{2}):(\d{2})$/);if(!m)return '';let n=(+m[1]*60 + +m[2] + mins)%1440;return String(Math.floor(n/60)).padStart(2,'0')+':'+String(n%60).padStart(2,'0');}
+function clientDuration(mins){return `${Math.floor(mins/60)}:${String(mins%60).padStart(2,'0')}`;}
+function clientParseFlight(x){return {id:uid(),flight:x.flight||'',date:x.date||'',origin:x.origin||'',dest:x.dest||'',originName:x.originName||'',destName:x.destName||'',aircraft:x.aircraft||'',reg:x.reg||'',std:x.std||'',atd:x.atd||'',sta:x.sta||'',status:x.status||'',airline:x.airline||'',operatorCode:x.operatorCode||'',flightTime:x.flightTime||''};}
+function clientDedupe(arr){const seen=new Set();return arr.filter(f=>{const k=[f.flight,f.origin,f.dest,f.std,f.reg].join('|');if(seen.has(k))return false;seen.add(k);return true;});}
+function clientParseNewAirportBoard(text){
+  const lines=String(text||'').split(/\r?\n/).map(s=>s.trim()).filter(Boolean);
+  const heading=lines.find(x=>/\b[A-Z0-9]{3}\/[A-Z0-9]{4}\s+(departures|arrivals)$/i.test(x))||'';
+  const hm=heading.match(/\b([A-Z0-9]{3})\/([A-Z0-9]{4})\s+(departures|arrivals)$/i);
+  let airportCode=hm?.[1]||'',section=(hm?.[3]||'').toLowerCase();
+  if(!airportCode){const ix=lines.findIndex(x=>/Live\s+(departures|arrivals)\s+board/i.test(x));if(ix>=0){section=/departures/i.test(lines[ix])?'departures':'arrivals';const before=lines.slice(0,ix).join(' '),mm=before.match(/\b([A-Z0-9]{3})\/([A-Z0-9]{4})\b/);if(mm)airportCode=mm[1];}}
+  if(!section)section=/\nTo:\s*\n/i.test(text)?'departures':/\nFrom:\s*\n/i.test(text)?'arrivals':'departures';
+  const flights=[];
+  for(let i=0;i<lines.length-1;i++){
+    if(!/^\d{2}:\d{2}$/.test(lines[i]))continue;
+    const flight=lines[i+1];if(!/^[A-Z0-9]{2,8}$/.test(flight))continue;
+    let j=i+2;while(j<lines.length&&!(/^\d{2}:\d{2}$/.test(lines[j])&&/^[A-Z0-9]{2,8}$/.test(lines[j+1]||''))&&!/^Later flights$/i.test(lines[j])&&!/^[A-Z]+,\s+[A-Z]{3}\s+\d{1,2}$/i.test(lines[j]))j++;
+    const block=lines.slice(i,j),marker=section==='arrivals'?'From:':'To:';let mi=block.findIndex(x=>x.toLowerCase()===marker.toLowerCase());if(mi<0)continue;
+    const city=block[mi+1]||'',iata=(block[mi+2]||'').toUpperCase(),icao=(block[mi+3]||'').toUpperCase();if(!/^[A-Z0-9]{3}$/.test(iata)||!/^[A-Z0-9]{4}$/.test(icao))continue;
+    const airline=block[mi+4]||'',rawType=block[mi+5]||'',aircraft=clientNormalizeAircraft(rawType);let reg='';if(clientLooksLikeRegistration(block[mi+6]||''))reg=block[mi+6].toUpperCase();
+    const status=block.find(x=>/^(Estimated|Departed|Scheduled|Delayed|Canceled|Cancelled|Boarding|Gate closed|Landed)\b/i.test(x))||'';
+    const origin=section==='arrivals'?iata:airportCode,dest=section==='arrivals'?airportCode:iata,mins=clientEstimateMinutes(origin,dest,aircraft),std=section==='departures'?block[0]:'',sta=section==='arrivals'?block[0]:clientAddMinutes(block[0],mins);
+    flights.push(clientParseFlight({flight,origin,dest,originName:section==='arrivals'?city:'',destName:section==='departures'?city:'',aircraft,reg,std,sta,status,airline,flightTime:clientDuration(mins)}));i=j-1;
+  }
+  return {type:'airport',meta:{airportCode,section,format:'fr24-2026-board',parser:'browser-fallback'},flights:clientDedupe(flights)};
+}
+function clientParseTailText(text){
+  const one=String(text||'').replace(/\s+/g,' ').trim();
+  const meta={registration:(one.match(/Flight history for aircraft\s*-\s*([A-Z0-9-]+)/i)||[])[1]||'',aircraft:(one.match(/AIRCRAFT\s+(.+?)\s+AIRLINE/i)||[])[1]||'',airline:(one.match(/AIRLINE\s+(.+?)\s+OPERATOR/i)||[])[1]||'',operator:(one.match(/OPERATOR\s+(.+?)\s+TYPE CODE/i)||[])[1]||'',typeCode:(one.match(/TYPE CODE\s+([A-Z0-9]+)/i)||[])[1]||'',operatorCode:''};
+  const afterType=one.split(/TYPE CODE\s+[A-Z0-9]+/i)[1]||'';meta.operatorCode=(afterType.match(/\bCode\s+([A-Z0-9]{3})\b/i)||[])[1]||'';
+  const flights=[],rx=/\b([A-Z0-9]{2,8})\s+(\d{2}\s+[A-Z][a-z]{2}\s+\d{4})\s+(\d{1,2}:\d{2})\s+Landed\s+(\d{2}:\d{2})\s+STD\s+(\d{2}:\d{2})\s+ATD\s+(\d{2}:\d{2})\s+STA\s+(\d{2}:\d{2})\s+FROM\s+(.+?)\s+\(([A-Z0-9]{3})\)\s+TO\s+(.+?)\s+\(([A-Z0-9]{3})\)(?=\s+[A-Z0-9]{2,8}\s+\d{2}\s+[A-Z][a-z]{2}\s+\d{4}|\s+More than|$)/g;
+  let m;while((m=rx.exec(one)))flights.push(clientParseFlight({flight:m[1],date:m[2],flightTime:m[3],status:'Landed '+m[4],std:m[5],atd:m[6],sta:m[7],origin:m[9],originName:m[8],dest:m[11],destName:m[10],aircraft:meta.typeCode,reg:meta.registration,airline:meta.operator,operatorCode:meta.operatorCode}));
+  return {type:'tail',meta,flights};
+}
+function clientParseFr24(text){const t=String(text||'').trim();if(!t)throw new Error('No FR24 text was supplied.');const out=/Flight history for aircraft|FLIGHTS HISTORY|TYPE CODE/i.test(t)?clientParseTailText(t):clientParseNewAirportBoard(t);if(!out.flights.length)throw new Error('No flights were recognized in the copied FR24 text.');return out;}
+
 async function parsePastedFR24(){
   const text=String($('fr24Paste').value||'').trim();
-  if(!text){
-    alert('Paste the copied FR24 page text into the import box first.');
-    $('fr24Paste').focus();
-    return;
-  }
-  const btn=$('parsePasteBtn');
-  const old=btn.textContent;
-  btn.disabled=true; btn.textContent='Parsing…';
+  if(!text){alert('Paste the copied FR24 page text into the import box first.');$('fr24Paste').focus();return;}
+  const btn=$('parsePasteBtn'),old=btn.textContent;btn.disabled=true;btn.textContent='Parsing…';
   try{
-    const r=await fetch('/api/parse-fr24',{
-      method:'POST',
-      headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({text})
-    });
-    const j=await r.json().catch(()=>({}));
-    if(!r.ok) throw new Error(j.error||`Parse failed (${r.status})`);
-    renderParsed(j);
-    switchPage('results');
-  }catch(e){
-    alert(`Could not parse the FR24 page: ${e.message}`);
-  }finally{
-    btn.disabled=false; btn.textContent=old;
-  }
+    let result=null;
+    try{
+      const r=await fetch('/api/parse-fr24',{method:'POST',headers:{'Content-Type':'application/json','Accept':'application/json'},body:JSON.stringify({text})});
+      const ct=(r.headers.get('content-type')||'').toLowerCase();
+      if(r.ok&&ct.includes('application/json')){const j=await r.json();if(j&&Array.isArray(j.flights))result=j;else if(j?.error)throw new Error(j.error);}
+    }catch(e){console.warn('Backend parser unavailable; using in-browser fallback.',e);}
+    if(!result)result=clientParseFr24(text);
+    renderParsed(result);switchPage('results');
+  }catch(e){alert(`Could not parse the FR24 page: ${e.message}`);}
+  finally{btn.disabled=false;btn.textContent=old;}
 }
 
 // Wire UI
