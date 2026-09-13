@@ -147,7 +147,7 @@ function chooseAirport(a){
   if(!a)return; currentAirport=a;
   state.recentAirports=[a.iata||a.icao,...state.recentAirports.filter(x=>x!==(a.iata||a.icao))].slice(0,10);saveState();renderRecent();
   $('airportCard').classList.remove('empty');
-  $('airportCard').innerHTML=`<h3>${esc(a.name)}</h3><div class="airport-codes">${esc(a.iata||'—')} / ${esc(a.icao||'—')}</div><div class="airport-meta">${esc(a.city)}, ${esc(a.country)} · ${esc((a.size||'unknown').toUpperCase())} · ${a.lat.toFixed(3)}, ${a.lon.toFixed(3)} · ${esc(a.tz)}</div><div class="button-row"><button class="btn primary" id="openDep">Open FR24 departures</button><button class="btn primary" id="openArr">Open FR24 arrivals</button><button class="btn secondary" id="goPaste">Import copied FR24 page</button></div>`;
+  $('airportCard').innerHTML=`<h3>${esc(a.name)}</h3><div class="airport-codes">${esc(a.iata||'—')} / ${esc(a.icao||'—')}</div><div class="airport-meta">${esc(a.city)}, ${esc(a.country)} · ${esc((a.size||'unknown').toUpperCase())} · ${a.lat.toFixed(3)}, ${a.lon.toFixed(3)} · ${esc(a.tz)}</div><div class="button-row"><button class="btn primary" id="openDep">Open FR24 departures</button><button class="btn primary" id="openArr">Open FR24 arrivals</button></div>`;
   $('openDep').onclick=()=>openFR24Airport(a,'departures'); $('openArr').onclick=()=>openFR24Airport(a,'arrivals'); $('goPaste').onclick=importClipboardBackend;
 }
 function openFR24Path(path){
@@ -407,28 +407,24 @@ async function rollRandomTail(){
     $('tailStatus').textContent=j.source||'Found'; $('tailStatus').className='status-pill good';
     const hasReg=!!j.registration,rc=REGISTRATION_COUNTRIES.find(x=>x[0]===country);
     $('tailCard').classList.remove('empty');
-    $('tailCard').innerHTML=`<h3>${esc(j.registration||'Registration unavailable')}</h3><div class="airport-codes">${esc(j.aircraft||'TYPE —')} · ${esc(j.callsign||'NO CALLSIGN')}</div><div class="airport-meta">${esc(rc?`${rc[1]} registration (${rc[2]})`:country)} · HEX ${esc(String(j.hex||'').toUpperCase())} · ${esc(j.operator||'Operator unavailable')} · ${esc(j.source||'')}</div><div class="button-row"><button id="openRandomTail" class="btn primary" ${hasReg?'':'disabled'}>Open FR24 tail history</button><button id="tailToPaste" class="btn secondary">Import copied FR24 page</button></div>`;
+    $('tailCard').innerHTML=`<h3>${esc(j.registration||'Registration unavailable')}</h3><div class="airport-codes">${esc(j.aircraft||'TYPE —')} · ${esc(j.callsign||'NO CALLSIGN')}</div><div class="airport-meta">${esc(rc?`${rc[1]} registration (${rc[2]})`:country)} · HEX ${esc(String(j.hex||'').toUpperCase())} · ${esc(j.operator||'Operator unavailable')} · ${esc(j.source||'')}</div><div class="button-row"><button id="openRandomTail" class="btn primary" ${hasReg?'':'disabled'}>Open FR24 tail history</button></div>`;
     if(hasReg)$('openRandomTail').onclick=()=>openFR24Path(`/data/aircraft/${encodeURIComponent(j.registration.toLowerCase())}`);
-    $('tailToPaste').onclick=importClipboardBackend;
   }catch(e){
     $('tailStatus').textContent='Lookup failed'; $('tailStatus').className='status-pill bad';
     $('tailCard').classList.remove('empty'); $('tailCard').innerHTML=`<div class="notice warning">${esc(e.message)}<br><br>Try again, select another aircraft type, or switch provider.</div>`;
   }finally{$('randomTailBtn').disabled=false;}
 }
 
-async function importClipboardBackend(){
-  let text='';
-  try{
-    text=await navigator.clipboard.readText();
-  }catch(e){
-    alert('Safari did not allow clipboard access. Copy the FR24 page again, return to LineForge, and tap Import copied FR24 page.');
+async function parsePastedFR24(){
+  const text=String($('fr24Paste').value||'').trim();
+  if(!text){
+    alert('Paste the copied FR24 page text into the import box first.');
+    $('fr24Paste').focus();
     return;
   }
-  if(!String(text||'').trim()){
-    alert('Your clipboard is empty. Copy the FR24 page text first.');
-    return;
-  }
-  switchPage('results');
+  const btn=$('parsePasteBtn');
+  const old=btn.textContent;
+  btn.disabled=true; btn.textContent='Parsing…';
   try{
     const r=await fetch('/api/parse-fr24',{
       method:'POST',
@@ -438,14 +434,19 @@ async function importClipboardBackend(){
     const j=await r.json().catch(()=>({}));
     if(!r.ok) throw new Error(j.error||`Parse failed (${r.status})`);
     renderParsed(j);
+    switchPage('results');
   }catch(e){
-    alert(`Could not parse the copied FR24 page: ${e.message}`);
+    alert(`Could not parse the FR24 page: ${e.message}`);
+  }finally{
+    btn.disabled=false; btn.textContent=old;
   }
 }
 
 // Wire UI
 $('themeBtn').onclick=()=>{state.theme=state.theme==='dark'?'light':'dark';saveState();applyTheme();};
-qsa('.import-clipboard-btn').forEach(b=>b.onclick=importClipboardBackend);
+$('parsePasteBtn').onclick=parsePastedFR24;
+$('clearPasteBtn').onclick=()=>{$('fr24Paste').value='';$('fr24Paste').focus();};
+$('fr24Paste').addEventListener('keydown',e=>{if((e.metaKey||e.ctrlKey)&&e.key==='Enter')parsePastedFR24();});
 populateTailCountries(); $('tailSource').value=state.tailSource||'auto'; $('tailAircraft').value=state.tailAircraft||''; $('tailCustomWrap').classList.toggle('hidden',$('tailAircraft').value!=='CUSTOM');
 $('randomTailBtn').onclick=rollRandomTail; $('tailCountry').onchange=()=>{state.tailCountry=$('tailCountry').value;saveState();}; $('tailSource').onchange=()=>{state.tailSource=$('tailSource').value;saveState();}; $('tailAircraft').onchange=()=>{state.tailAircraft=$('tailAircraft').value; $('tailCustomWrap').classList.toggle('hidden',$('tailAircraft').value!=='CUSTOM'); saveState();};
 $('randomAirportBtn').onclick=()=>{const x=eligibleAirports();if(!x.length)return alert('No airports match those filters.');chooseAirport(x[Math.floor(Math.random()*x.length)]);};

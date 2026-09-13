@@ -30,7 +30,7 @@
   <main>
     <section id="page-finder" class="page active">
       <div class="page-title-row">
-        <div><h1>Flight Desk</h1><p>Generate an airport or live aircraft tail, open FR24, then import the copied FR24 page directly from your clipboard.</p></div>
+        <div><h1>Flight Desk</h1><p>Generate an airport or live aircraft tail, open FR24, then paste the copied page text below to build a clean flight table.</p></div>
         <div id="dbStatus" class="status-pill">Loading airport database…</div>
       </div>
 
@@ -50,7 +50,7 @@
           </div>
           <div class="button-row">
             <button id="randomAirportBtn" class="btn primary">Roll random airport</button>
-            <button id="searchAirportBtn" class="btn secondary">Find airport</button><button class="btn secondary import-clipboard-btn">Import copied FR24 page</button>
+            <button id="searchAirportBtn" class="btn secondary">Find airport</button>
           </div>
           <div id="airportCard" class="airport-card empty">Choose or roll an airport.</div>
         </article>
@@ -66,13 +66,28 @@
             <label>Source<select id="tailSource"><option value="auto">Auto · ADSB.lol first</option><option value="adsblol">ADSB.lol</option><option value="opensky">OpenSky</option></select></label>
           </div>
           <div id="tailCustomWrap" class="form-grid hidden"><label>Custom aircraft ICAO type<input id="tailCustomAircraft" maxlength="8" placeholder="e.g. H25B"></label></div>
-          <div class="button-row"><button id="randomTailBtn" class="btn primary">Roll random tail</button><button class="btn secondary import-clipboard-btn">Import copied FR24 page</button></div>
+          <div class="button-row"><button id="randomTailBtn" class="btn primary">Roll random tail</button></div>
           <div id="tailStatus" class="status-pill">Ready</div>
           <div id="tailCard" class="airport-card empty">Roll a live tail to begin.</div>
         </article>
       </div>
 
-      <article class="panel spacer-top">
+      <article class="panel import-panel spacer-top">
+        <div class="panel-head"><h2>FR24 Paste Import</h2><span class="muted">Airport departures, arrivals, or aircraft history</span></div>
+        <div class="import-body">
+          <label for="fr24Paste">Paste copied Flightradar24 page text</label>
+          <textarea id="fr24Paste" class="fr24-paste" spellcheck="false" placeholder="Paste the full copied FR24 page here…"></textarea>
+          <div class="import-actions">
+            <div class="import-hint">The pasted text is sent to the LineForge backend for parsing. Raw text is not shown in Flight Results.</div>
+            <div class="button-row tight">
+              <button id="clearPasteBtn" class="btn secondary">Clear</button>
+              <button id="parsePasteBtn" class="btn primary">Parse flights</button>
+            </div>
+          </div>
+        </div>
+      </article>
+
+      <article class="panel spacer-top recent-panel">
         <div class="panel-head"><h2>Recent airport selections</h2><button id="clearRecentBtn" class="btn small ghost">Clear</button></div>
         <div id="recentAirports" class="chip-row"></div>
       </article>
@@ -88,7 +103,7 @@
           <label>Departure<select id="filterDeparture"><option value="">All</option></select></label>
           <label>Destination<select id="filterDestination"><option value="">All</option></select></label>
         </div>
-        <div class="table-wrap"><table class="data-table"><thead><tr><th>Flight</th><th>Airline</th><th>Date</th><th>Route</th><th>Aircraft</th><th>Tail</th><th>STD</th><th>STA</th><th>Status</th><th>Actions</th></tr></thead><tbody id="resultsBody"><tr><td colspan="10" class="empty-cell">Copy an FR24 airport or tail page, then tap “Import copied FR24 page.”</td></tr></tbody></table></div>
+        <div class="table-wrap"><table class="data-table"><thead><tr><th>Flight</th><th>Airline</th><th>Date</th><th>Route</th><th>Aircraft</th><th>Tail</th><th>STD</th><th>STA</th><th>Status</th><th>Actions</th></tr></thead><tbody id="resultsBody"><tr><td colspan="10" class="empty-cell">Paste an FR24 airport or tail page on Flight Desk, then choose “Parse flights.”</td></tr></tbody></table></div>
       </article>
     </section>
 
